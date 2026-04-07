@@ -11,7 +11,7 @@
 ### The AI-Powered Agent Harness for Professional Bug Bounty Hunting
 
 *Your AI copilot that sees live traffic, remembers past hunts, and hunts autonomously.*
-
+*dev is cooking*
 <sub>by <a href="https://shuvonsec.me">shuvonsec</a></sub>
 
 <br>
