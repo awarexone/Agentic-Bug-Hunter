@@ -65,6 +65,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 | `/jwt-scan` | `/jwt-scan <token> [--analyze\|--alg-none\|--confuse\|--crack]` — JWT alg:none, RS256→HS256 confusion, weak-secret crack (offline) |
 | `/oob` | `/oob --payloads <oob-domain>` — out-of-band orchestrator: confirm blind SSRF/XXE/SQLi/RCE/Log4Shell via interactsh correlation |
 | `/llm-redteam` | `/llm-redteam --url <chat-endpoint>` — LLM red-team corpus: prompt-injection, jailbreak, system-prompt leak, exfil, indirect injection |
+| `/poc` | `/poc capture <url> [-H ...] \| from-request req.txt [--response resp.txt]` — reproducible PoC evidence bundle (request/response, curl, HAR, screenshot, report-ready evidence.md); secrets redacted by default |
 
 ### Agents (9 specialized agents)
 
@@ -116,6 +117,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 - `tools/jwt_scanner.py` — offline JWT toolkit: alg:none forgery, RS256→HS256 confusion, HS256 secret crack, static claim analysis (pure stdlib)
 - `tools/oob_listener.py` — out-of-band orchestrator wrapping interactsh-client; payloads + correlation for blind SSRF/XXE/SQLi/RCE/Log4Shell
 - `tools/llm_redteam.py` — LLM red-team corpus runner (prompt-injection/jailbreak/system-prompt-leak/exfil/indirect/guardrail-bypass) with canary detection
+- `tools/poc_bundler.py` — PoC evidence bundler (`capture` live via SSRF-guarded `safe_http`, or `from-request` offline from a saved/Burp request). Emits `request.http`, `response.http`, `repro.sh` (curl), `evidence.har` (HAR 1.2), optional `screenshot.png`, `evidence.md` (report-ready), and `bundle.json` (manifest + response SHA-256) under `findings/<target>-<class>/evidence/<id>/`. Secrets redacted by default (repro.sh uses `$ENV` placeholders); refuses PUT/DELETE/PATCH without `--confirm-unsafe`. See `/poc`.
 - Full catalogue: **`tools/README.md`** (~50 tools). `hunt.py` auto-ingests leads after recon (`--graphql` / `--cve-hunt` / `--skip-leads` flags).
 
 ### External tool references
