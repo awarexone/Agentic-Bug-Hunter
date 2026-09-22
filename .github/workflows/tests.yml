@@ -38,3 +38,20 @@ jobs:
 
       - name: Run test suite
         run: pytest -q
+
+  bugbench:
+    name: bugbench (detection-quality gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # BugBench runs the toolkit's detectors against a ground-truth corpus and
+      # fails the build if precision drops or a false positive appears — so a
+      # change can never quietly make a detector noisier or less accurate.
+      - name: Run BugBench detection-quality gate
+        run: python bughunter/tools/bench.py run --min-precision 1.0 --max-fp-rate 0.0
