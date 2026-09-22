@@ -1,0 +1,15 @@
+{
+  "id": "cors-fixed-allowlist-safe",
+  "detector": "cors",
+  "note": "Server returns a fixed, trusted allow-list origin and ignores the attacker origin — correct CORS. A detector that flags this is a false positive.",
+  "input": {
+    "url": "https://api.example.com/me",
+    "sent_origin": "https://evil.example",
+    "acao": "https://app.example.com",
+    "acac": "true"
+  },
+  "expected": {
+    "vulnerable": false,
+    "class": "cors"
+  }
+}
