@@ -118,6 +118,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 - `tools/oob_listener.py` — out-of-band orchestrator wrapping interactsh-client; payloads + correlation for blind SSRF/XXE/SQLi/RCE/Log4Shell
 - `tools/llm_redteam.py` — LLM red-team corpus runner (prompt-injection/jailbreak/system-prompt-leak/exfil/indirect/guardrail-bypass) with canary detection
 - `tools/poc_bundler.py` — PoC evidence bundler (`capture` live via SSRF-guarded `safe_http`, or `from-request` offline from a saved/Burp request). Emits `request.http`, `response.http`, `repro.sh` (curl), `evidence.har` (HAR 1.2), optional `screenshot.png`, `evidence.md` (report-ready), and `bundle.json` (manifest + response SHA-256) under `findings/<target>-<class>/evidence/<id>/`. Secrets redacted by default (repro.sh uses `$ENV` placeholders); refuses PUT/DELETE/PATCH without `--confirm-unsafe`. See `/poc`.
+- `tools/report_gate.py` — report enforcement (Verification Spine 3/3). Fail-closed check that a finding may be reported only if a `PROVEN` `verification/1` record (written by `verifier.py`) exists in its bundle; no record / unreadable / non-reportable → BLOCKED. Pure `gate()`; `check`/`sweep` with exit codes for the report step and CI. Reads only the record format, not the verifier. Enforces `rules/reporting.md` rule 0.
 - Full catalogue: **`tools/README.md`** (~50 tools). `hunt.py` auto-ingests leads after recon (`--graphql` / `--cve-hunt` / `--skip-leads` flags).
 
 ### External tool references
