@@ -66,6 +66,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 | `/oob` | `/oob --payloads <oob-domain>` — out-of-band orchestrator: confirm blind SSRF/XXE/SQLi/RCE/Log4Shell via interactsh correlation |
 | `/llm-redteam` | `/llm-redteam --url <chat-endpoint>` — LLM red-team corpus: prompt-injection, jailbreak, system-prompt leak, exfil, indirect injection |
 | `/poc` | `/poc capture <url> [-H ...] \| from-request req.txt [--response resp.txt]` — reproducible PoC evidence bundle (request/response, curl, HAR, screenshot, report-ready evidence.md); secrets redacted by default |
+| `/replay` | `/replay run <bundle-dir> [--marker "signal"] \| all [root]` — re-verify a PoC bundle: STILL_VULNERABLE / FIXED / CHANGED / UNREACHABLE; SSRF-guarded, unsafe methods gated, batch retest report |
 
 ### Agents (9 specialized agents)
 
@@ -118,6 +119,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 - `tools/oob_listener.py` — out-of-band orchestrator wrapping interactsh-client; payloads + correlation for blind SSRF/XXE/SQLi/RCE/Log4Shell
 - `tools/llm_redteam.py` — LLM red-team corpus runner (prompt-injection/jailbreak/system-prompt-leak/exfil/indirect/guardrail-bypass) with canary detection
 - `tools/poc_bundler.py` — PoC evidence bundler (`capture` live via SSRF-guarded `safe_http`, or `from-request` offline from a saved/Burp request). Emits `request.http`, `response.http`, `repro.sh` (curl), `evidence.har` (HAR 1.2), optional `screenshot.png`, `evidence.md` (report-ready), and `bundle.json` (manifest + response SHA-256) under `findings/<target>-<class>/evidence/<id>/`. Secrets redacted by default (repro.sh uses `$ENV` placeholders); refuses PUT/DELETE/PATCH without `--confirm-unsafe`. See `/poc`.
+- `tools/replay.py` — finding replay / regression. Re-sends the exact request from a `poc_bundler` bundle (via SSRF-guarded `safe_http`) and returns STILL_VULNERABLE / FIXED / CHANGED / UNREACHABLE / INDETERMINATE. Marker-based verdicts are `confirmed`; status+SHA-256 diff is a labelled `heuristic` (never claims FIXED alone). `run <bundle-dir>` for one, `all [root]` sweeps every bundle into `regression-report.md`. Secrets read from env only; unsafe methods gated by `--confirm-unsafe`; `--fail-if-vulnerable` exits 3 for CI/monitoring. See `/replay`.
 - Full catalogue: **`tools/README.md`** (~50 tools). `hunt.py` auto-ingests leads after recon (`--graphql` / `--cve-hunt` / `--skip-leads` flags).
 
 ### External tool references
