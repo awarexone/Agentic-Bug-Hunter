@@ -21,7 +21,7 @@ API keys (env vars):
   ANTHROPIC_API_KEY   — Claude (claude-opus-4-8, claude-sonnet-4-6, etc.)
   OPENAI_API_KEY      — OpenAI (gpt-4o, o1, etc.)
   XAI_API_KEY         — Grok (grok-4.5, grok-4.3, etc.)
-  GROQ_API_KEY        — Groq free tier (llama-3.3-70b-versatile)
+  GROQ_API_KEY        — Groq free tier (openai/gpt-oss-20b)
   DEEPSEEK_API_KEY    — DeepSeek (deepseek-v4-flash / deepseek-v4-pro)
   DEEPSEEK_THINKING   — set to 1 to run DeepSeek V4 in thinking mode (off by
                         default; thinking bills extra reasoning tokens)
@@ -191,7 +191,9 @@ class LLMClient:
         "claude":      "claude-sonnet-4-6",
         "openai":      "gpt-4o",
         "grok":        "grok-4.5",
-        "groq":        "llama-3.3-70b-versatile",
+        # Groq's llama-3.3-70b-versatile hit its free-tier shutdown date
+        # (2026-08-16) and now 404s; gpt-oss-20b is a current production model.
+        "groq":        "openai/gpt-oss-20b",
         "deepseek":    "deepseek-v4-flash",
         "gemini":      "gemini-2.0-flash",
         "kimi":        "moonshot-v1-128k",
@@ -220,6 +222,25 @@ class LLMClient:
         "grok-2":        "grok-4.5",
         "grok-3":        "grok-4.3",
         "grok-3-mini":   "grok-4.3",
+    }
+
+    # Groq decommissions models aggressively and returns HTTP 404 (not 400) for
+    # a dead model id — the exact "404 Not Found for .../chat/completions" seen
+    # in the wild. Every id below has passed its shutdown date, so remap saved
+    # configs / `--model` onto a current production model instead of 404ing.
+    #   mixtral-8x7b-32768   shutdown 2025-03-20
+    #   gemma2-9b-it         shutdown 2025-10-08
+    #   llama3-70b-8192 / llama3-8b-8192   shutdown 2025-08-30
+    #   llama-3.3-70b-versatile / llama-3.1-8b-instant  free-tier shutdown
+    #     2026-08-16 (past today) — remap to the gpt-oss replacements.
+    # Current catalog: https://console.groq.com/docs/models
+    GROQ_LEGACY_ALIASES = {
+        "mixtral-8x7b-32768":      "openai/gpt-oss-20b",
+        "gemma2-9b-it":            "openai/gpt-oss-20b",
+        "llama3-70b-8192":         "openai/gpt-oss-120b",
+        "llama3-8b-8192":          "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+        "llama-3.1-8b-instant":    "openai/gpt-oss-20b",
     }
 
     def __init__(self, provider: str | None = None, model: str | None = None):
@@ -345,7 +366,7 @@ class LLMClient:
                                        "Content-Type": "application/json"})
             self._api_base   = "https://api.groq.com/openai/v1"
             self.available   = True
-            self.description = "Groq API (free tier — llama-3.3-70b)"
+            self.description = "Groq API (free tier — openai/gpt-oss-20b)"
 
         elif provider == "deepseek":
             key = os.environ.get("DEEPSEEK_API_KEY", "")
@@ -602,6 +623,8 @@ class LLMClient:
         m    = model or self.DEFAULT_MODELS[self.provider]
         if self.provider == "grok":
             m = self.GROK_LEGACY_ALIASES.get(m, m)
+        elif self.provider == "groq":
+            m = self.GROQ_LEGACY_ALIASES.get(m, m)
         body = {"model": m, "max_tokens": max_tokens, "temperature": temperature,
                 "messages": [{"role": "system", "content": system},
                              {"role": "user",   "content": user}]}
@@ -609,6 +632,17 @@ class LLMClient:
             body["model"], body["thinking"] = self._deepseek_model_and_thinking(m)
         r = self._http.post(f"{base}/chat/completions",
                             data=_json.dumps(body), timeout=120)
+        # A 404 on an OpenAI-compatible /chat/completions almost always means
+        # the model id was retired, not that the URL is wrong (the path is
+        # fixed). Groq in particular decommissions models often. Turn the bare
+        # "404 Not Found for url: .../chat/completions" into an actionable hint.
+        if r.status_code == 404:
+            raise RuntimeError(
+                f"{self.provider} returned HTTP 404 for model '{m}'. The model "
+                f"id is likely retired/decommissioned. List current models with "
+                f"`bughunter models` or GET {base}/models, then set BRAIN_MODEL "
+                f"to a supported one."
+            )
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
 
@@ -630,7 +664,10 @@ class LLMClient:
         elif self.provider == "grok":
             return ["grok-4.5", "grok-4.3", "grok-build-0.1"]
         elif self.provider == "groq":
-            return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]
+            # Current Groq production catalog (2026-09). The older llama-3.x /
+            # mixtral / gemma ids were decommissioned — see GROQ_LEGACY_ALIASES.
+            return ["openai/gpt-oss-20b", "openai/gpt-oss-120b",
+                    "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
         elif self.provider == "deepseek":
             return ["deepseek-v4-flash", "deepseek-v4-pro"]
         elif self.provider == "gemini":
