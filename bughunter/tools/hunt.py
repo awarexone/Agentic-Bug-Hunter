@@ -55,18 +55,16 @@ def _normalize_argv(argv):
 MAX_CIDR_HOSTS = 254
 
 def detect_target_type(target: str) -> str:
-    """Return 'list', 'cidr', 'ip', or 'domain'.
+    """Return 'list', 'local', 'cidr', 'ip', or 'domain'.
 
-    'list' = path to a readable file of pre-resolved hosts (one per line).
-    Used for programs without wildcard scope where subdomain enum is wasted.
+    'list'  = path to a readable file of pre-resolved hosts (one per line).
+    'local' = loopback / RFC-1918 / *.local — no public subdomain enum.
+    Delegates to tools.target_normalize so the shell, engine.py and hunt.py all
+    classify a target identically (it normalizes scheme/port first, so
+    'http://10.0.0.5:3000/' is 'local', not 'domain').
     """
-    if os.path.isfile(target):
-        return "list"
-    try:
-        net = ipaddress.ip_network(target, strict=False)
-        return "cidr" if net.num_addresses > 1 else "ip"
-    except ValueError:
-        return "domain"
+    from tools.target_normalize import detect_target_type as _dtt
+    return _dtt(target)
 
 
 def expand_cidr(cidr: str, max_hosts: int = MAX_CIDR_HOSTS) -> list[str]:
@@ -315,8 +313,8 @@ def run_recon(domain, quick=False, scope_lock=False):
 
     # Detect target type and pass to recon_engine.sh
     target_type = detect_target_type(domain)
-    if target_type in ("ip", "cidr", "list"):
-        scope_lock = True  # IPs/CIDRs/pre-resolved lists never need subdomain enum
+    if target_type in ("ip", "cidr", "list", "local"):
+        scope_lock = True  # IPs/CIDRs/lists/local hosts never need subdomain enum
         log("info", f"Target type: {target_type.upper()} — subdomain enum skipped")
         if target_type == "cidr":
             try:
@@ -340,22 +338,27 @@ def run_recon(domain, quick=False, scope_lock=False):
                 return False
             log("info", f"Domain list {domain} → {n} host(s) to scan")
 
-    scope_env  = "SCOPE_LOCK=1 " if scope_lock else ""
-    type_env   = f'TARGET_TYPE="{target_type}" '
-
-    # Inject auth env vars (if any) so the bash helper picks them up.
+    # Inject auth env vars (if any) so the bash helper picks them up. Config is
+    # passed through the environment, never interpolated into a shell string:
+    # `domain` is user-controlled, so a shell=True command with "{domain}" was a
+    # command-injection vector (e.g. domain = 'a";id;"'). Use an argv list with
+    # shell=False so the target can never break out into shell syntax.
     child_env = os.environ.copy()
+    child_env["TARGET_TYPE"] = target_type
+    if scope_lock:
+        child_env["SCOPE_LOCK"] = "1"
     if _AUTH_SESSION is not None:
         _AUTH_SESSION.export_to_env(child_env)
         if not _AUTH_SESSION.is_empty():
             log("info", _AUTH_SESSION.describe())
 
+    cmd = ["bash", script, domain]
+    if quick_flag:
+        cmd.append(quick_flag)
+
     # Run with live output
     try:
-        proc = subprocess.Popen(
-            f'{scope_env}{type_env}bash "{script}" "{domain}" {quick_flag}',
-            shell=True, cwd=BASE_DIR, env=child_env,
-        )
+        proc = subprocess.Popen(cmd, shell=False, cwd=BASE_DIR, env=child_env)
         proc.wait(timeout=3600)  # 60 min timeout (CIDR ranges can be large)
         return proc.returncode == 0
     except subprocess.TimeoutExpired:

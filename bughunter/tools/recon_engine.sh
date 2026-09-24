@@ -41,6 +41,46 @@ if [ -f "$TARGET" ] && [ -r "$TARGET" ]; then
     TARGET="${TARGET%.*}"
 fi
 
+# ── Normalize a URL/host/host:port into a bare host (+ optional port) ─────────
+# Scanners need `9am.io`, not `https://9am.io/`; without this the pipeline ran
+# `nmap https://9am.io/` (0 hosts) and wrote output to `recon/https:/9am.io`.
+# Mirrors tools/target_normalize.py (cross-checked in tests). Sets globals
+# TARGET (bare host, lowercased) and TARGET_PORT (empty when none). Skipped for
+# file-list targets, whose TARGET is already a basename.
+TARGET_PORT=""
+_normalize_target() {
+    local s="$1"
+    # trim whitespace
+    s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
+    # strip scheme://
+    shopt -s nocasematch
+    [[ "$s" =~ ^[a-z][a-z0-9+.-]*:// ]] && s="${s#*://}"
+    shopt -u nocasematch
+    # drop path/query/fragment
+    s="${s%%[/?#]*}"
+    # userinfo user:pass@host -> host
+    s="${s##*@}"
+    local host="$s" port=""
+    if [[ "$s" == \[*\]* ]]; then                 # [IPv6] or [IPv6]:port
+        host="${s#\[}"; host="${host%%\]*}"
+        local rest="${s##*\]}"
+        [[ "$rest" =~ ^:([0-9]+)$ ]] && port="${BASH_REMATCH[1]}"
+    elif [[ "$s" == *:*:* ]]; then                 # bare IPv6, leave intact
+        host="$s"
+    elif [[ "$s" =~ ^(.+):([0-9]+)$ ]]; then       # host:port
+        host="${BASH_REMATCH[1]}"; port="${BASH_REMATCH[2]}"
+    fi
+    host="${host%.}"                               # trailing dot
+    host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+    TARGET="$host"; TARGET_PORT="$port"
+}
+# Normalize hostnames/URLs only. A CIDR must keep its /NN mask (normalization
+# would strip it as a path) and a file-list target is already a basename.
+if [ "${TARGET_TYPE:-}" != "list" ] && [ "${TARGET_TYPE:-}" != "cidr" ] \
+   && ! [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
+    _normalize_target "$TARGET"
+fi
+
 RECON_DIR="${RECON_OUT_DIR:-$BASE_DIR/recon/$TARGET}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 THREADS="${BB_THREADS:-50}"
@@ -69,9 +109,18 @@ if ! command -v timeout &>/dev/null; then
 fi
 
 # ── Detect target type (passed from hunt.py or auto-detected here) ────────────
+# "local" = loopback / RFC-1918 private / *.local — no public subdomain recon.
 _detect_target_type() {
     local t="$1"
-    if [[ "$t" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then echo "cidr"
+    # CIDR first so 10.0.0.0/24 is a range, not a single "local" host.
+    if   [[ "$t" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then echo "cidr"
+    elif [[ "$t" == "localhost" || "$t" == "ip6-localhost" || "$t" == "::1" ]]; then echo "local"
+    elif [[ "$t" == *.localhost || "$t" == *.local ]];         then echo "local"
+    elif [[ "$t" =~ ^127\. ]];                                 then echo "local"
+    elif [[ "$t" =~ ^10\. ]];                                  then echo "local"
+    elif [[ "$t" =~ ^192\.168\. ]];                            then echo "local"
+    elif [[ "$t" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]];          then echo "local"
+    elif [[ "$t" =~ ^169\.254\. ]];                            then echo "local"
     elif [[ "$t" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]];        then echo "ip"
     else echo "domain"; fi
 }
@@ -92,8 +141,15 @@ PY
 }
 TARGET_TYPE="${TARGET_TYPE:-$(_detect_target_type "$TARGET")}"
 
-# For IP/CIDR: always scope-lock — no subdomain enum needed
-if [ "$TARGET_TYPE" = "ip" ] || [ "$TARGET_TYPE" = "cidr" ]; then
+# Debug/test hook: print the parsed target and exit before doing any scanning.
+#   recon_engine.sh <target> --normalize-only
+if [ "$QUICK_MODE" = "--normalize-only" ] || [ "${BB_NORMALIZE_ONLY:-0}" = "1" ]; then
+    printf 'host=%s\nport=%s\ntype=%s\n' "$TARGET" "$TARGET_PORT" "$TARGET_TYPE"
+    exit 0
+fi
+
+# For IP/CIDR/local: always scope-lock — no subdomain enum needed
+if [ "$TARGET_TYPE" = "ip" ] || [ "$TARGET_TYPE" = "cidr" ] || [ "$TARGET_TYPE" = "local" ]; then
     SCOPE_LOCK=1
 fi
 
@@ -227,9 +283,15 @@ elif [ "$TARGET_TYPE" = "cidr" ]; then
         _expand_cidr_hosts "$TARGET" > "$RECON_DIR/subdomains/all.txt"
     fi
     # Skip all subdomain enum tools — jump straight to live host probing
-elif [ "${SCOPE_LOCK:-0}" = "1" ] && [ "$TARGET_TYPE" = "ip" ]; then
-    log_info "Single IP target — skipping subdomain enumeration"
-    echo "$TARGET" > "$RECON_DIR/subdomains/all.txt"
+elif [ "$TARGET_TYPE" = "ip" ] || [ "$TARGET_TYPE" = "local" ]; then
+    if [ "$TARGET_TYPE" = "local" ]; then
+        log_info "Local/private target — skipping subdomain enum, crt.sh and wayback (no public data)"
+    else
+        log_info "Single IP target — skipping subdomain enumeration"
+    fi
+    # Seed the live-probe list with the exact host[:port] so httpx hits the
+    # app's port (e.g. localhost:3000) instead of only 80/443.
+    echo "${TARGET}${TARGET_PORT:+:$TARGET_PORT}" > "$RECON_DIR/subdomains/all.txt"
 else
 
 # Subfinder (passive, fast)
@@ -356,7 +418,10 @@ echo ""
 log_info "Phase 4: URL Collection"
 
 # GAU - Get All URLs (wayback, commoncrawl, otx, urlscan)
-if command -v gau &>/dev/null; then
+# Local/private hosts have no public archive — skip straight to active crawling.
+if [ "$TARGET_TYPE" = "local" ]; then
+    log_info "Local target — skipping gau/wayback (no historical data); relying on katana crawl"
+elif command -v gau &>/dev/null; then
     log_step "Running gau (historical URLs)..."
     echo "$TARGET" | gau --threads 20 --o "$RECON_DIR/urls/gau.txt" 2>/dev/null || \
     echo "$TARGET" | gau > "$RECON_DIR/urls/gau.txt" 2>/dev/null || true

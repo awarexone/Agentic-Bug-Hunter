@@ -215,14 +215,17 @@ def _get_brain(provider: str | None = None):
     return Brain(model=model, provider=provider)
 
 
-def _run_shell(cmd: list[str], cwd: str | None = None, timeout: int = 3600) -> tuple[bool, str]:
+def _run_shell(cmd: list[str], cwd: str | None = None, timeout: int = 3600,
+               env: dict | None = None) -> tuple[bool, str]:
     """Run a command with live output, return (success, combined_output).
     Takes an argv list, not a shell string — see
     SECURITY-REVIEW-2026-08-22.md finding #5 for why shell=True with
-    f-string-interpolated targets was a command injection bug."""
+    f-string-interpolated targets was a command injection bug.
+    `env`, when given, is merged over the current environment."""
+    proc_env = {**os.environ, **env} if env else None
     try:
         proc = subprocess.Popen(
-            cmd, shell=False, cwd=cwd or str(HERE),
+            cmd, shell=False, cwd=cwd or str(HERE), env=proc_env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
         lines = []
@@ -450,19 +453,26 @@ def cmd_models(args):
 
 def cmd_recon(args):
     """Run recon pipeline then AI surface analysis."""
+    from tools.target_normalize import normalize_target
+
     target = args.target
-    header(f"Recon: {target}")
+    # The scanners need a bare host; the output dir must match what
+    # recon_engine.sh writes. Both derive it the same way (host, no scheme/port),
+    # and we pin RECON_OUT_DIR so the two never disagree across install layouts.
+    host, _port = normalize_target(target)
+    recon_dir = RECON / (host or target)
+    header(f"Recon: {host or target}")
 
     script = TOOLS / "recon_engine.sh"
     if script.exists():
         info("Running recon pipeline...")
-        success, _ = _run_shell(["bash", str(script), target])
+        success, _ = _run_shell(["bash", str(script), target],
+                                env={"RECON_OUT_DIR": str(recon_dir)})
         if not success:
             warn("Recon had issues — continuing with AI analysis")
     else:
         warn("recon_engine.sh not found — skipping to AI analysis")
 
-    recon_dir = RECON / target
     info("Running AI surface analysis...")
     brain = _get_brain()
     result = brain.analyze_recon(str(recon_dir) if recon_dir.exists() else target)
@@ -474,18 +484,24 @@ def cmd_recon(args):
 
 def cmd_hunt(args):
     """Full hunt pipeline: recon + vuln scan + AI analysis."""
+    from tools.target_normalize import normalize_target
+
     target = args.target
-    header(f"Hunt: {target}")
+    host, _port = normalize_target(target)
+    host = host or target
+    header(f"Hunt: {host}")
+
+    recon_dir = RECON / host
 
     # Run recon
     script = TOOLS / "recon_engine.sh"
     if script.exists():
         info("Phase 1: Recon...")
-        _run_shell(["bash", str(script), target])
+        _run_shell(["bash", str(script), target],
+                   env={"RECON_OUT_DIR": str(recon_dir)})
 
     # Run vuln scan
     vuln_script = TOOLS / "vuln_scanner.sh"
-    recon_dir = RECON / target
     if vuln_script.exists() and recon_dir.exists():
         info("Phase 2: Vuln scan...")
         _run_shell(["bash", str(vuln_script), str(recon_dir)])
@@ -493,13 +509,13 @@ def cmd_hunt(args):
     # AI analysis
     info("Phase 3: AI analysis...")
     brain = _get_brain()
-    findings_dir = FINDINGS / target
+    findings_dir = FINDINGS / host
     if findings_dir.exists():
         brain.interpret_scan(str(findings_dir))
     elif recon_dir.exists():
         brain.analyze_recon(str(recon_dir))
     else:
-        warn(f"No data for {target} — run recon first")
+        warn(f"No data for {host} — run recon first")
 
 
 def cmd_validate(args):
