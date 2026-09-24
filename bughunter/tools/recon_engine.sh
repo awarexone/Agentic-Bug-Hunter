@@ -30,6 +30,10 @@ BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=tools/_auth_helper.sh
 . "$(dirname "$0")/_auth_helper.sh"
 
+# OS-specific install hints for missing tools (dep_install_hint / warn_missing).
+# shellcheck source=tools/_dep_hint.sh
+. "$(dirname "$0")/_dep_hint.sh"
+
 # Domain-list mode: if the target is a readable regular file, treat its
 # contents as a pre-resolved scope list (one host per line, # comments OK).
 # Useful for programs without wildcards where subdomain enum is wasted work.
@@ -182,7 +186,7 @@ _resolve_pd_httpx() {
 HTTPX_BIN="$(_resolve_pd_httpx || true)"
 if ! "$HTTPX_BIN" -version 2>&1 | grep -qi "projectdiscovery"; then
     echo "[!] WARNING: ProjectDiscovery httpx not found on PATH. Live-host probing will fail." >&2
-    echo "    Install with:  GOBIN=\"\$HOME/go/bin\" go install github.com/projectdiscovery/httpx/cmd/httpx@latest" >&2
+    dep_install_hint httpx >&2
 fi
 export HTTPX_BIN
 
@@ -300,7 +304,7 @@ if command -v subfinder &>/dev/null; then
     subfinder -d "$TARGET" -silent -all -t 50 -o "$RECON_DIR/subdomains/subfinder.txt" 2>/dev/null || true
     log_done "subfinder: $(wc -l < "$RECON_DIR/subdomains/subfinder.txt" 2>/dev/null || echo 0) subdomains"
 else
-    log_warn "subfinder not installed — skipping"
+    warn_missing subfinder "subdomain enumeration"
 fi
 
 # Amass (passive)
@@ -386,7 +390,11 @@ if [ -x "$HTTPX_BIN" ] && [ -s "$RECON_DIR/subdomains/all.txt" ]; then
     log_done "403 Forbidden: $(wc -l < "$RECON_DIR/live/status_403.txt" 2>/dev/null || echo 0)"
     log_done "401 Auth Required: $(wc -l < "$RECON_DIR/live/status_401.txt" 2>/dev/null || echo 0)"
 else
-    log_warn "httpx not installed or no subdomains found — skipping"
+    if ! [ -x "$HTTPX_BIN" ]; then
+        warn_missing httpx "HTTP probing"
+    else
+        log_warn "No hosts to probe (empty subdomains/all.txt) — skipping HTTP probing"
+    fi
 fi
 
 # ============================================================
@@ -408,7 +416,7 @@ if command -v nmap &>/dev/null; then
         | sort -u > "$RECON_DIR/ports/open_ports.txt" 2>/dev/null || true
     log_done "Open ports: $(wc -l < "$RECON_DIR/ports/open_ports.txt" 2>/dev/null || echo 0)"
 else
-    log_warn "nmap not installed — skipping"
+    warn_missing nmap "port scan"
 fi
 
 # ============================================================
@@ -427,7 +435,8 @@ elif command -v gau &>/dev/null; then
     echo "$TARGET" | gau > "$RECON_DIR/urls/gau.txt" 2>/dev/null || true
     log_done "gau: $(wc -l < "$RECON_DIR/urls/gau.txt" 2>/dev/null || echo 0) URLs"
 else
-    log_warn "gau not installed — using wayback fallback"
+    log_warn "gau not installed — using wayback fallback. To install gau:"
+    dep_install_hint gau
     curl -s "https://web.archive.org/cdx/search/cdx?url=*.$TARGET/*&output=text&fl=original&collapse=urlkey&limit=5000" \
         > "$RECON_DIR/urls/wayback.txt" 2>/dev/null || true
     log_done "wayback: $(wc -l < "$RECON_DIR/urls/wayback.txt" 2>/dev/null || echo 0) URLs"
@@ -556,7 +565,11 @@ if command -v ffuf &>/dev/null && [ -s "$RECON_DIR/live/urls.txt" ]; then
         log_warn "No wordlist found — run: python3 tools/hunt.py --setup-wordlists"
     fi
 else
-    log_warn "ffuf not installed or no live hosts — skipping directory fuzzing"
+    if ! command -v ffuf &>/dev/null; then
+        warn_missing ffuf "directory fuzzing"
+    else
+        log_warn "No live hosts — skipping directory fuzzing"
+    fi
 fi
 
 # ============================================================
@@ -708,7 +721,7 @@ if command -v nuclei &>/dev/null && [ -s "$RECON_DIR/live/urls.txt" ]; then
         log_done "nuclei: no findings"
     fi
 else
-    [ -z "$(command -v nuclei)" ] && log_warn "nuclei not installed — see ./tools/external_arsenal.sh --install-hint nuclei"
+    [ -z "$(command -v nuclei)" ] && warn_missing nuclei "template scan"
 fi
 
 # ============================================================
