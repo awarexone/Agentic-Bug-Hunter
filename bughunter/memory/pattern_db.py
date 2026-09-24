@@ -85,7 +85,7 @@ class PatternDB:
 
         rotate_if_needed(self.path, max_bytes=self.max_bytes, keep=self.keep_backups)
 
-        fd = os.open(str(self.path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        fd = os.open(str(self.path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             try:

@@ -109,8 +109,18 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict):
+    # The config can hold API keys. write_text() would create the file under
+    # the process umask (often 0o644) and only chmod afterward, leaving a brief
+    # world-readable window on a multi-user host. Create it 0o600 from the
+    # start (and tighten the dir), then chmod in case it pre-existed.
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(cfg, indent=2))
+    try:
+        os.chmod(CONFIG.parent, 0o700)
+    except OSError:
+        pass
+    fd = os.open(str(CONFIG), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(cfg, indent=2))
     os.chmod(CONFIG, 0o600)
 
 
