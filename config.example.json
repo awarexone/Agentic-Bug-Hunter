@@ -29,6 +29,7 @@
     "grok":        "XAI_API_KEY=...  (grok-4.5 / grok-4.3)",
     "openrouter":  "OPENROUTER_API_KEY=...  (anthropic/claude-sonnet-4.6 / openai/gpt-4o / …)",
     "orcarouter":  "ORCAROUTER_API_KEY=...  (openai/gpt-4o / orcarouter/auto / …)",
-    "fluxion":     "FLUXION_API_KEY=...  (openai/gpt-4o / … — https://fluxionai.world/v1)"
+    "fluxion":     "FLUXION_API_KEY=...  (openai/gpt-4o / … — https://fluxionai.world/v1)",
+    "requesty":    "REQUESTY_API_KEY=...  (anthropic/claude-sonnet-4-6 / openai/gpt-4o-mini / ...)"
   }
 }
