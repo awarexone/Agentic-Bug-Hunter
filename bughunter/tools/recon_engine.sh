@@ -667,7 +667,7 @@ CICD_SCANNER="$(dirname "$0")/cicd_scanner.sh"
 # Extract github.com/<org> patterns from recon data
 for f in "$RECON_DIR/live/httpx_full.txt" "$RECON_DIR/js/endpoints.txt" "$RECON_DIR/urls/all.txt"; do
     if [ -f "$f" ]; then
-        GITHUB_ORGS="$GITHUB_ORGS $(grep -oP 'github\.com/\K[a-zA-Z0-9_-]+' "$f" 2>/dev/null || true)"
+        GITHUB_ORGS="$GITHUB_ORGS $(grep -oE 'github\.com/[a-zA-Z0-9_-]+' "$f" 2>/dev/null | sed 's#.*github\.com/##' || true)"
     fi
 done
 
@@ -799,7 +799,7 @@ echo "  JS endpoints:      $(wc -l < "$RECON_DIR/js/endpoints.txt" 2>/dev/null |
 echo "  Unique params:     $(wc -l < "$RECON_DIR/params/unique_params.txt" 2>/dev/null || echo 0)"
 
 [ -d "$RECON_DIR/cicd" ] && \
-echo "  CI/CD findings:   $(find "$RECON_DIR/cicd" -name 'scan_results.txt' -exec grep -cP '\.github/workflows/' {} + 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')"
+echo "  CI/CD findings:   $(find "$RECON_DIR/cicd" -name 'scan_results.txt' -exec grep -cF '.github/workflows/' {} + 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')"
 
 [ -f "$RECON_DIR/nuclei/findings.jsonl" ] && \
 echo "  Nuclei hits:       $(wc -l < "$RECON_DIR/nuclei/findings.jsonl" | tr -d ' ')"

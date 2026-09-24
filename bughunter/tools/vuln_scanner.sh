@@ -34,6 +34,24 @@ log_vuln()  { echo -e "    ${RED}${BOLD}[$(ts)] [VULN]${NC} $1"; }
 log_crit()  { echo -e "    ${MAGENTA}${BOLD}[$(ts)] [CRITICAL]${NC} $1"; }
 ts()        { date '+%Y-%m-%d %H:%M:%S'; }
 
+# Portable nanosecond clock. BSD `date` (macOS) has no %N and emits a literal
+# 'N', which corrupts the `/ 1000000` millisecond math used by the timing-based
+# checks below. Prefer GNU date, then gdate, then python3, then fall back to
+# second precision (×1e9) so the arithmetic still works everywhere.
+_now_ns() {
+    local n
+    n=$(date +%s%N 2>/dev/null)
+    case "$n" in
+        ''|*[!0-9]*) : ;;          # empty or contains non-digit (BSD 'N')
+        *) printf '%s\n' "$n"; return ;;
+    esac
+    if command -v gdate >/dev/null 2>&1; then gdate +%s%N; return; fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import time; print(int(time.time()*1000000000))'; return
+    fi
+    printf '%s\n' "$(( $(date +%s) * 1000000000 ))"
+}
+
 # ── Config ────────────────────────────────────────────────────────────────────
 RECON_DIR=""
 QUICK_MODE=""
@@ -149,17 +167,17 @@ verify_sqli_poc() {
     log_step "  [VERIFY] Linear scaling check on param #$p_idx ($dialect)..."
     
     # 1. Baseline (0s)
-    T0_START=$(date +%s%N); curl -sk -o /dev/null --max-time 20 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$url"; T0=$(( ($(date +%s%N) - T0_START) / 1000000 ))
+    T0_START=$(_now_ns); curl -sk -o /dev/null --max-time 20 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$url"; T0=$(( ($(_now_ns) - T0_START) / 1000000 ))
 
     # 2. 1s Sleep
     local pl1="'%20AND%20SLEEP(1)--%20"; [ "$dialect" = "postgres" ] && pl1="'||pg_sleep(1)--%20"
     U1=$(echo "$url" | sed "s/=\([^&]*\)/=$pl1/$p_idx")
-    T1_START=$(date +%s%N); curl -sk -o /dev/null --max-time 25 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$U1"; T1=$(( ($(date +%s%N) - T1_START) / 1000000 ))
+    T1_START=$(_now_ns); curl -sk -o /dev/null --max-time 25 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$U1"; T1=$(( ($(_now_ns) - T1_START) / 1000000 ))
 
     # 3. 2s Sleep
     local pl2="'%20AND%20SLEEP(2)--%20"; [ "$dialect" = "postgres" ] && pl2="'||pg_sleep(2)--%20"
     U2=$(echo "$url" | sed "s/=\([^&]*\)/=$pl2/$p_idx")
-    T2_START=$(date +%s%N); curl -sk -o /dev/null --max-time 30 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$U2"; T2=$(( ($(date +%s%N) - T2_START) / 1000000 ))
+    T2_START=$(_now_ns); curl -sk -o /dev/null --max-time 30 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$U2"; T2=$(( ($(_now_ns) - T2_START) / 1000000 ))
     
     D1=$(( T1 - T0 )); D2=$(( T2 - T1 ))
     # Allow 200ms jitter
@@ -255,7 +273,7 @@ if ! skip_has sqli; then
         log_step "Advanced SQLi verification on top 10 parameterised URLs..."
         head -10 "$PARAMS_FILE" | while read -r url; do
             [ -z "$url" ] && continue
-            T_START=$(date +%s%N); curl -sk -o /dev/null --max-time 10 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$url"; BASE_MS=$(( ($(date +%s%N) - T_START) / 1000000 ))
+            T_START=$(_now_ns); curl -sk -o /dev/null --max-time 10 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$url"; BASE_MS=$(( ($(_now_ns) - T_START) / 1000000 ))
             P_COUNT=$(echo "$url" | grep -o "=" | wc -l | tr -d ' ')
             [ "$P_COUNT" -eq 0 ] && continue
             for i in $(seq 1 "$P_COUNT"); do
@@ -263,7 +281,7 @@ if ! skip_has sqli; then
                     p="'%20AND%20SLEEP(2)--%20"; [ "$dialect" = "postgres" ] && p="'||pg_sleep(2)--%20"
                     # Fixed sed: use alternate delimiter and correct numeric occurrence
                     SU=$(echo "$url" | sed "s/=\([^&]*\)/=$p/$i")
-                    TS=$(date +%s%N); curl -sk -o /dev/null --max-time 20 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$SU" >/dev/null 2>&1; RC=$?; TE=$(( ($(date +%s%N) - TS) / 1000000 ))
+                    TS=$(_now_ns); curl -sk -o /dev/null --max-time 20 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$SU" >/dev/null 2>&1; RC=$?; TE=$(( ($(_now_ns) - TS) / 1000000 ))
                     if [ "$RC" -eq 0 ] && [ "$((TE - BASE_MS))" -gt 1800 ]; then
                         if verify_sqli_poc "$url" "$i" "$dialect"; then
                             log_crit "EMPIRICAL SQLI POC: $url"

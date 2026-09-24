@@ -259,7 +259,9 @@ if [ "$(check_tool gf)" = true ]; then
     for vuln in xss sqli ssrf redirect lfi rce idor ssti; do
         cat "$OUT/urls/all_urls.txt" | gf $vuln 2>/dev/null > "$OUT/vulns/gf_${vuln}.txt"
         COUNT=$(wc -l < "$OUT/vulns/gf_${vuln}.txt" 2>/dev/null || echo 0)
-        [ "$COUNT" -gt 0 ] && warn "$COUNT potential ${vuln^^} candidates → $OUT/vulns/gf_${vuln}.txt"
+        # ${vuln^^} is bash-4 only; macOS ships bash 3.2 → use tr for uppercasing.
+        VU=$(printf '%s' "$vuln" | tr '[:lower:]' '[:upper:]')
+        [ "$COUNT" -gt 0 ] && warn "$COUNT potential $VU candidates → $OUT/vulns/gf_${vuln}.txt"
     done
 fi
 

