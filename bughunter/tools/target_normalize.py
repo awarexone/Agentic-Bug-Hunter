@@ -29,6 +29,8 @@ __all__ = [
     "normalize_target",
     "detect_target_type",
     "is_local_target",
+    "is_safe_host",
+    "safe_target_dirname",
 ]
 
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*://", re.IGNORECASE)
@@ -142,6 +144,35 @@ def detect_target_type(target: str) -> str:
         return "ip"
     except ValueError:
         return "domain"
+
+
+# A host that is safe to use as a *single* filesystem path component: a
+# hostname, IPv4, or IPv6 literal. Deliberately excludes '/', '\', NUL and any
+# '..' so a target can never be turned into a path that escapes the recon dir.
+_SAFE_HOST_RE = re.compile(r"^[a-z0-9._:\[\]-]+$")
+
+
+def is_safe_host(host: str) -> bool:
+    """True if `host` is a safe single path component (no traversal)."""
+    if not host or host in (".", ".."):
+        return False
+    if any(c in host for c in ("/", "\\", "\x00")):
+        return False
+    if ".." in host:
+        return False
+    return _SAFE_HOST_RE.fullmatch(host) is not None
+
+
+def safe_target_dirname(raw: str) -> str | None:
+    """Normalized host safe to use as an output directory name, or None.
+
+    Callers MUST treat None as "reject the target" — never fall back to the raw
+    value, which is what let `recon ../../etc/x` and `recon /etc/x` write
+    outside the recon/ sandbox (pathlib does not collapse '..' and resets on an
+    absolute component).
+    """
+    host, _ = normalize_target(raw)
+    return host if is_safe_host(host) else None
 
 
 if __name__ == "__main__":  # tiny CLI for shell/debug parity checks

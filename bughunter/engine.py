@@ -453,15 +453,21 @@ def cmd_models(args):
 
 def cmd_recon(args):
     """Run recon pipeline then AI surface analysis."""
-    from tools.target_normalize import normalize_target
+    from tools.target_normalize import safe_target_dirname
 
     target = args.target
     # The scanners need a bare host; the output dir must match what
     # recon_engine.sh writes. Both derive it the same way (host, no scheme/port),
     # and we pin RECON_OUT_DIR so the two never disagree across install layouts.
-    host, _port = normalize_target(target)
-    recon_dir = RECON / (host or target)
-    header(f"Recon: {host or target}")
+    # Reject anything that isn't a safe single path component — never fall back
+    # to the raw target, or `recon ../../etc/x` / `recon /etc/x` would write
+    # outside the recon sandbox.
+    host = safe_target_dirname(target)
+    if not host:
+        err(f"Refusing unsafe target {target!r} — expected a hostname, IP or CIDR")
+        return
+    recon_dir = RECON / host
+    header(f"Recon: {host}")
 
     script = TOOLS / "recon_engine.sh"
     if script.exists():
@@ -484,11 +490,13 @@ def cmd_recon(args):
 
 def cmd_hunt(args):
     """Full hunt pipeline: recon + vuln scan + AI analysis."""
-    from tools.target_normalize import normalize_target
+    from tools.target_normalize import safe_target_dirname
 
     target = args.target
-    host, _port = normalize_target(target)
-    host = host or target
+    host = safe_target_dirname(target)
+    if not host:
+        err(f"Refusing unsafe target {target!r} — expected a hostname, IP or CIDR")
+        return
     header(f"Hunt: {host}")
 
     recon_dir = RECON / host

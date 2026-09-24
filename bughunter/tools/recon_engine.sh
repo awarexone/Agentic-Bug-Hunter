@@ -74,7 +74,7 @@ _normalize_target() {
     elif [[ "$s" =~ ^(.+):([0-9]+)$ ]]; then       # host:port
         host="${BASH_REMATCH[1]}"; port="${BASH_REMATCH[2]}"
     fi
-    host="${host%.}"                               # trailing dot
+    while [[ "$host" == *. ]]; do host="${host%.}"; done   # all trailing dots (match Python rstrip('.'))
     host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
     TARGET="$host"; TARGET_PORT="$port"
 }
@@ -144,6 +144,16 @@ print("\n".join(hosts))
 PY
 }
 TARGET_TYPE="${TARGET_TYPE:-$(_detect_target_type "$TARGET")}"
+
+# Refuse a target that normalized away or carries path-traversal characters, so
+# $RECON_DIR can never point outside recon/ (belt-and-suspenders with the
+# Python-side safe_target_dirname check). A CIDR legitimately contains '/'.
+if [ "$TARGET_TYPE" != "list" ] && [ "$TARGET_TYPE" != "cidr" ]; then
+    if [ -z "$TARGET" ] || [ "$TARGET" = "." ] || [[ "$TARGET" == */* ]] || [[ "$TARGET" == *..* ]]; then
+        echo "[-] Refusing unsafe/empty target '$1' after normalization" >&2
+        exit 2
+    fi
+fi
 
 # Debug/test hook: print the parsed target and exit before doing any scanning.
 #   recon_engine.sh <target> --normalize-only
