@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # The repo layout is mixed: skills/commands/rules/scripts/hooks live at the
-# root, but agents/tools/mcp live under bughunter/. Resolve each one to
+# root, but agents/ and mcp/ live under bughunter/. Resolve each one to
 # whichever location actually exists so a layout change breaks loudly in one
 # place instead of silently skipping files everywhere.
 resolve_src() {
@@ -31,7 +31,6 @@ resolve_src() {
 }
 
 AGENTS_SRC="$(resolve_src "agents" "agents" "bughunter/agents")" || true
-TOOLS_SRC="$(resolve_src "tools" "tools" "bughunter/tools")" || true
 MCP_SRC="$(resolve_src "mcp" "mcp" "bughunter/mcp")" || true
 
 usage() {
