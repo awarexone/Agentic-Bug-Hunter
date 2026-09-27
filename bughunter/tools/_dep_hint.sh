@@ -17,6 +17,19 @@
 # Detect once; used to put the host's own OS first.
 _DEP_OS="$(uname -s 2>/dev/null || echo unknown)"
 
+# Resolve this script's own directory so the fallback hint points at a path
+# that actually exists. The repo keeps tools/ under bughunter/, so a hardcoded
+# "./tools/..." is a dead end, and an absolute path stays correct no matter
+# which directory the caller ran from.
+_DEP_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+if [ -n "$_DEP_SELF_DIR" ] && [ -f "$_DEP_SELF_DIR/external_arsenal.sh" ]; then
+    _DEP_ARSENAL="$_DEP_SELF_DIR/external_arsenal.sh"
+else
+    # Layout moved again and we could not resolve it — still better than a
+    # silently wrong path, and the user can locate the script themselves.
+    _DEP_ARSENAL="bughunter/tools/external_arsenal.sh"
+fi
+
 dep_install_hint() {
     local tool="$1" mac="" lin="" note=""
     case "$tool" in
@@ -47,7 +60,7 @@ dep_install_hint() {
             mac="brew install amass"
             lin="GOBIN=\$HOME/go/bin go install github.com/owasp-amass/amass/v4/...@master" ;;
         *)
-            echo "      See: ./tools/external_arsenal.sh --install-hint $tool"
+            echo "      See: $_DEP_ARSENAL --install-hint $tool"
             return ;;
     esac
     # Print the running OS first for copy-paste convenience.
