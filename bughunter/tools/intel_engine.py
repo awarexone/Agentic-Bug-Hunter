@@ -213,7 +213,10 @@ def fetch_all_intel(techs: list[str], target: str, program: str = "") -> list[di
                         f"{stats.get('name', program)}: "
                         f"{'bounty' if stats.get('offers_bounties') else 'no bounty'}, "
                         f"{stats.get('resolved_reports', '?')} resolved, "
-                        f"avg {stats.get('avg_days_to_first_response', '?')}d response"
+                        f"avg bounty "
+                        f"{stats.get('avg_bounty_lower', '?')}-"
+                        f"{stats.get('avg_bounty_upper', '?')} "
+                        f"{stats.get('currency', 'USD')}"
                     ),
                     "published": stats.get("launched_at", ""),
                     "stats": stats,
