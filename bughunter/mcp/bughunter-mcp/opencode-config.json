@@ -3,7 +3,7 @@
     "bughunter": {
       "type": "local",
       "enabled": true,
-      "command": ["python3", "mcp/bughunter-mcp/server.py"],
+      "command": ["bughunter", "mcp", "serve"],
       "environment": {
         "BBHUNT_MCP_APPROVE": "0"
       }
