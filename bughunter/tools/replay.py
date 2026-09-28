@@ -37,6 +37,16 @@ Secrets: redacted bundles reference secrets via env vars ($AUTHORIZATION, …),
 exactly like the bundle's repro.sh. replay reads those from the environment and
 never writes secret values or full response bodies into its own artifacts.
 
+Safety on re-issued traffic:
+  * Scope gate (Critical Rule #1): pass --scope/--scope-file and every send is
+    checked with the repo's scope_checker; out-of-scope targets are OUT_OF_SCOPE
+    and never sent. `all` refuses to run with no scope unless --no-scope is given.
+  * SSRF: the bundle URL is untrusted, so the INITIAL host is validated with the
+    same blocklist safe_http uses on redirects (metadata/private/loopback) before
+    any request — a tampered bundle can't make the first hop hit 169.254.169.254.
+  * A guard/redirect block is reported as BLOCKED, distinct from UNREACHABLE, so a
+    bug that now 302s to an internal host is never masked as "fixed".
+
 Design: resolve_headers() and decide_verdict() are pure and unit-tested without a
 socket; only replay_one() (via poc_bundler.capture) touches the network.
 """
@@ -51,6 +61,7 @@ import sys
 import urllib.error
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 _PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../bughunter
 _TOOLS = os.path.join(_PKG, "tools")
@@ -58,6 +69,8 @@ for _p in (_PKG, _TOOLS):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 import poc_bundler as poc  # noqa: E402  (reuse capture/parse/hash/constants)
+from safe_http import _is_blocked_redirect_target  # noqa: E402  (same SSRF blocklist)
+from scope_checker import ScopeChecker  # noqa: E402  (deterministic scope gate)
 
 # Verdicts
 STILL_VULNERABLE = "STILL_VULNERABLE"
@@ -66,6 +79,8 @@ CHANGED = "CHANGED"
 UNREACHABLE = "UNREACHABLE"
 INDETERMINATE = "INDETERMINATE"
 SKIPPED_UNSAFE = "SKIPPED_UNSAFE"
+OUT_OF_SCOPE = "OUT_OF_SCOPE"   # scope guard: target not in the program's scope
+BLOCKED = "BLOCKED"             # SSRF guard: initial host or a redirect went internal
 ERROR = "ERROR"
 
 # Matches poc_bundler's redacted placeholder: "‹redacted:$AUTHORIZATION›"
@@ -73,8 +88,22 @@ _REDACTED_RE = re.compile(r"^‹redacted:\$([A-Z0-9_]+)›$")
 
 _ICON = {
     STILL_VULNERABLE: "🔴", FIXED: "🟢", CHANGED: "🟡", UNREACHABLE: "⚫",
-    INDETERMINATE: "⚪", SKIPPED_UNSAFE: "⏭", ERROR: "✖",
+    INDETERMINATE: "⚪", SKIPPED_UNSAFE: "⏭", OUT_OF_SCOPE: "🚫", BLOCKED: "🛑",
+    ERROR: "✖",
 }
+
+
+def initial_host_blocked(url: str) -> bool:
+    """True if a URL's *initial* host is a metadata/private/loopback/link-local
+    target. safe_urlopen only guards redirect hops, and load_bundle trusts the
+    bundle's URL verbatim — so a tampered bundle could point the FIRST request at
+    169.254.169.254 or localhost. We validate the initial host with the exact same
+    blocklist safe_http uses on redirects, before ever sending."""
+    try:
+        host = urlparse(url).hostname
+    except ValueError:
+        return True
+    return _is_blocked_redirect_target(host)
 
 
 def now_iso() -> str:
@@ -94,6 +123,7 @@ class Observed:
     body: str = ""
     elapsed_ms: int = 0
     error: str = ""
+    blocked: bool = False  # request refused by the SSRF guard (host/redirect internal)
 
 
 @dataclass
@@ -126,6 +156,12 @@ def resolve_headers(headers: list[tuple[str, str]],
 def decide_verdict(baseline_status: int | None, baseline_sha: str | None,
                    marker: str | None, observed: Observed) -> Verdict:
     """The heart of replay — pure, deterministic, exhaustively tested."""
+    if observed.blocked:
+        # A guard/redirect block is NOT "endpoint gone / fixed" — a bug that now
+        # 302s to an internal host is a live signal, not an absence. Keep it
+        # distinct from UNREACHABLE so it never reads as a silent pass.
+        return Verdict(BLOCKED, "confirmed",
+                       observed.error or "request blocked by SSRF guard — investigate")
     if not observed.reachable:
         return Verdict(UNREACHABLE, "confirmed", observed.error or "host did not respond")
     if marker:
@@ -216,7 +252,8 @@ def find_bundles(root: str) -> list[str]:
 
 
 def replay_one(bundle_dir: str, timeout: float, confirm_unsafe: bool,
-               marker_override: str | None, env: dict[str, str] | None = None) -> dict:
+               marker_override: str | None, env: dict[str, str] | None = None,
+               scope: ScopeChecker | None = None) -> dict:
     """Replay a single bundle and return a result dict (never raises)."""
     env = env if env is not None else dict(os.environ)
     result = {
@@ -241,15 +278,32 @@ def replay_one(bundle_dir: str, timeout: float, confirm_unsafe: bool,
             result["observed"] = {
                 "reachable": observed.reachable, "status": observed.status,
                 "sha256": observed.sha256, "elapsed_ms": observed.elapsed_ms,
-                "error": observed.error,
+                "error": observed.error, "blocked": observed.blocked,
             }
         result["marker_used"] = bool(marker)
         return result
+
+    # Scope gate FIRST — Critical Rule #1: never touch an out-of-scope asset.
+    # No request is sent for a target the program's scope doesn't cover.
+    if scope is not None and not scope.is_in_scope(ex.url):
+        host = urlparse(ex.url).hostname or ex.url
+        return finalize(Verdict(OUT_OF_SCOPE, "n/a",
+                                f"{host} is not in scope — not sent"))
 
     # Guard mutating methods — replaying a DELETE could re-trigger the action.
     if ex.method.upper() in poc.UNSAFE_METHODS and not confirm_unsafe:
         return finalize(Verdict(SKIPPED_UNSAFE, "n/a",
                                 f"{ex.method} may mutate state; re-run with --confirm-unsafe"))
+
+    # SSRF guard on the INITIAL host — the bundle URL is untrusted input.
+    if initial_host_blocked(ex.url):
+        host = urlparse(ex.url).hostname or ex.url
+        return finalize(
+            decide_verdict(bundle["baseline_status"], bundle["baseline_sha"], marker,
+                           Observed(reachable=False, blocked=True,
+                                    error=f"initial host blocked by SSRF guard: {host}")),
+            Observed(reachable=False, blocked=True,
+                     error=f"initial host blocked by SSRF guard: {host}"))
 
     headers, missing = resolve_headers(ex.request_headers, env)
     if missing:
@@ -265,7 +319,12 @@ def replay_one(bundle_dir: str, timeout: float, confirm_unsafe: bool,
             body=fresh.response_body, elapsed_ms=fresh.elapsed_ms,
         )
     except urllib.error.URLError as e:
-        observed = Observed(reachable=False, error=str(getattr(e, "reason", e)))
+        reason = str(getattr(e, "reason", e))
+        # safe_urlopen raises URLError for a blocked redirect ("SSRF guard") or
+        # "too many redirects". Those are guard signals, NOT "endpoint gone" —
+        # flag them as blocked so a bug that now 302s internal isn't masked.
+        blocked = ("SSRF guard" in reason) or ("too many redirects" in reason)
+        observed = Observed(reachable=False, blocked=blocked, error=reason)
     except Exception as e:  # never let one bundle break a sweep
         observed = Observed(reachable=False, error=f"{type(e).__name__}: {e}")
 
@@ -282,8 +341,8 @@ def render_report(results: list[dict]) -> str:
     counts: dict[str, int] = {}
     for r in results:
         counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
-    order = [STILL_VULNERABLE, CHANGED, INDETERMINATE, FIXED, UNREACHABLE,
-             SKIPPED_UNSAFE, ERROR]
+    order = [STILL_VULNERABLE, BLOCKED, CHANGED, INDETERMINATE, FIXED, UNREACHABLE,
+             OUT_OF_SCOPE, SKIPPED_UNSAFE, ERROR]
     summary = "  ".join(f"{_ICON.get(k, '')} {k}:{counts[k]}"
                         for k in order if k in counts)
     lines = [f"# Regression sweep — {now_iso()}", "",
@@ -324,6 +383,22 @@ def _print_one(result: dict) -> None:
               f"reachable={obs.get('reachable')} {obs.get('elapsed_ms', 0)}ms")
 
 
+def build_scope(patterns: list[str] | None, scope_file: str | None) -> ScopeChecker | None:
+    """Build a ScopeChecker from inline patterns and/or a scope file (one pattern
+    per line, '#' comments). Returns None when no scope was supplied."""
+    pats = list(patterns or [])
+    if scope_file:
+        with open(scope_file, encoding="utf-8", errors="replace") as fh:
+            pats += [ln.strip() for ln in fh if ln.strip() and not ln.startswith("#")]
+    return ScopeChecker(domains=pats) if pats else None
+
+
+def _add_scope_args(p) -> None:
+    p.add_argument("--scope", action="append", default=[],
+                   help="in-scope domain pattern, e.g. '*.target.com' (repeatable)")
+    p.add_argument("--scope-file", help="file of in-scope patterns (one per line)")
+
+
 def main(argv=None) -> int:
     # Verdict icons are non-ASCII; make sure a non-UTF-8 console (e.g. Windows
     # cp1252) degrades gracefully instead of crashing on print.
@@ -346,6 +421,7 @@ def main(argv=None) -> int:
     pr.add_argument("--json", dest="as_json", action="store_true")
     pr.add_argument("--fail-if-vulnerable", action="store_true",
                     help="exit 3 if the verdict is STILL_VULNERABLE (for CI/monitoring)")
+    _add_scope_args(pr)
 
     pa = sub.add_parser("all", help="sweep every PoC bundle under a root")
     pa.add_argument("root", nargs="?", default=os.path.join(poc._REPO, "findings"),
@@ -355,16 +431,25 @@ def main(argv=None) -> int:
     pa.add_argument("--json", dest="as_json", action="store_true")
     pa.add_argument("--fail-if-vulnerable", action="store_true",
                     help="exit 3 if any verdict is STILL_VULNERABLE")
+    _add_scope_args(pa)
+    pa.add_argument("--no-scope", action="store_true",
+                    help="explicitly re-issue traffic to ALL stored targets with no "
+                         "scope check (dangerous — you assert every target is in scope)")
 
     args = ap.parse_args(argv)
 
     if args.cmd == "run":
+        scope = build_scope(args.scope, args.scope_file)
+        if scope is None:
+            print("[!] no scope provided — replaying only this chosen bundle without a "
+                  "scope check. Pass --scope/--scope-file to gate the send.", file=sys.stderr)
         if args.marker:
             try:
                 save_marker(args.bundle_dir, args.marker)
             except OSError:
                 pass
-        result = replay_one(args.bundle_dir, args.timeout, args.confirm_unsafe, args.marker)
+        result = replay_one(args.bundle_dir, args.timeout, args.confirm_unsafe, args.marker,
+                            scope=scope)
         try:
             _write_replay_json(args.bundle_dir, result)
         except OSError:
@@ -376,13 +461,22 @@ def main(argv=None) -> int:
         return 3 if (args.fail_if_vulnerable and result["verdict"] == STILL_VULNERABLE) else 0
 
     if args.cmd == "all":
+        scope = build_scope(args.scope, args.scope_file)
+        if scope is None and not args.no_scope:
+            # Critical Rule #1: never mass re-attack every stored target blind.
+            print("[!] refusing to sweep-replay every stored target with NO scope check "
+                  "(Critical Rule #1: read full scope before touching any asset).",
+                  file=sys.stderr)
+            print("[!] pass --scope '*.target.com' / --scope-file <file> to gate, or "
+                  "--no-scope to explicitly override.", file=sys.stderr)
+            return 2
         bundles = find_bundles(args.root)
         if not bundles:
             print(f"[!] no PoC bundles found under {args.root}. Create one with /poc.")
             return 0
         results = []
         for d in bundles:
-            r = replay_one(d, args.timeout, args.confirm_unsafe, None)
+            r = replay_one(d, args.timeout, args.confirm_unsafe, None, scope=scope)
             try:
                 _write_replay_json(d, r)
             except OSError:

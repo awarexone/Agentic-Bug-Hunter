@@ -8,11 +8,23 @@ offline `from-request` path. `bughunter/tools` is on sys.path via conftest.
 
 import json
 import os
+import urllib.error
 
 import pytest
 
 import poc_bundler as poc
 import replay as rp
+
+# The real initial-host SSRF guard, captured before the autouse fixture stubs it.
+_REAL_HOST_GUARD = rp.initial_host_blocked
+
+
+@pytest.fixture(autouse=True)
+def _offline_ssrf_guard(monkeypatch):
+    """Keep unit tests offline/fast: stub the initial-host guard to allow by
+    default (it would otherwise do a DNS lookup). SSRF-specific tests restore the
+    real guard via _REAL_HOST_GUARD."""
+    monkeypatch.setattr(rp, "initial_host_blocked", lambda url: False)
 
 
 # ---------------------------------------------------------------------------
@@ -20,10 +32,10 @@ import replay as rp
 # ---------------------------------------------------------------------------
 
 
-def make_bundle(tmp_path, *, method="GET", body="", auth=True,
+def make_bundle(tmp_path, *, method="GET", body="", auth=True, host="api.acme.com",
                 resp_status="200 OK", resp_body='{"email":"victim@acme.com"}'):
     tmp_path.mkdir(parents=True, exist_ok=True)
-    req_lines = [f"{method} /users/1 HTTP/1.1", "Host: api.acme.com"]
+    req_lines = [f"{method} /users/1 HTTP/1.1", f"Host: {host}"]
     if auth:
         req_lines.append("Authorization: Bearer SECRET")
     req = "\n".join(req_lines) + "\n\n" + body
@@ -268,13 +280,107 @@ def test_cli_run_writes_replay_json_and_exit_code(tmp_path, monkeypatch):
 def test_cli_all_sweep_writes_report(tmp_path, monkeypatch):
     make_bundle(tmp_path / "b1", auth=False, resp_body="x")
     monkeypatch.setattr(poc, "capture", fake_capture_returning("x"))
-    rc = rp.main(["all", str(tmp_path)])
+    rc = rp.main(["all", str(tmp_path), "--no-scope"])
     assert rc == 0
     assert (tmp_path / "regression-report.md").exists()
     assert (tmp_path / "regression.json").exists()
 
 
 def test_cli_all_empty_root(tmp_path, capsys):
-    rc = rp.main(["all", str(tmp_path)])
+    rc = rp.main(["all", str(tmp_path), "--no-scope"])
     assert rc == 0
     assert "no PoC bundles" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Review fix 1 — scope gate (Critical Rule #1)
+# ---------------------------------------------------------------------------
+
+
+def test_replay_out_of_scope_is_not_sent(tmp_path, monkeypatch):
+    d = make_bundle(tmp_path, auth=False)
+    sent = {"n": 0}
+    monkeypatch.setattr(poc, "capture", lambda *a, **k: sent.__setitem__("n", 1))
+    scope = rp.ScopeChecker(domains=["other-company.com"])  # acme.com NOT in scope
+    r = rp.replay_one(d, timeout=3, confirm_unsafe=False, marker_override=None,
+                      env={}, scope=scope)
+    assert r["verdict"] == rp.OUT_OF_SCOPE
+    assert sent["n"] == 0  # no request issued to an out-of-scope target
+
+
+def test_replay_in_scope_proceeds(tmp_path, monkeypatch):
+    d = make_bundle(tmp_path, auth=False, resp_body="marker-here")
+    monkeypatch.setattr(poc, "capture", fake_capture_returning("marker-here"))
+    scope = rp.ScopeChecker(domains=["*.acme.com"])  # api.acme.com IS in scope
+    r = rp.replay_one(d, timeout=3, confirm_unsafe=False, marker_override="marker-here",
+                      env={}, scope=scope)
+    assert r["verdict"] == rp.STILL_VULNERABLE
+
+
+def test_cli_all_refuses_without_scope(tmp_path, monkeypatch, capsys):
+    make_bundle(tmp_path / "b", auth=False, resp_body="x")
+    monkeypatch.setattr(poc, "capture", fake_capture_returning("x"))
+    rc = rp.main(["all", str(tmp_path)])  # no --scope, no --no-scope
+    assert rc == 2
+    assert "scope" in capsys.readouterr().err.lower()
+
+
+def test_cli_all_with_scope_runs(tmp_path, monkeypatch):
+    make_bundle(tmp_path / "b", auth=False, resp_body="x")
+    monkeypatch.setattr(poc, "capture", fake_capture_returning("x"))
+    assert rp.main(["all", str(tmp_path), "--scope", "*.acme.com"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Review fix 2 — SSRF on the initial hop
+# ---------------------------------------------------------------------------
+
+
+def test_initial_host_guard_literals():
+    assert _REAL_HOST_GUARD("http://169.254.169.254/latest/meta-data") is True
+    assert _REAL_HOST_GUARD("http://localhost:8080/") is True
+    assert _REAL_HOST_GUARD("http://127.0.0.1/") is True
+    assert _REAL_HOST_GUARD("https://8.8.8.8/") is False   # public IP, no DNS needed
+    assert _REAL_HOST_GUARD("") is True                     # empty host → blocked
+
+
+def test_replay_blocks_internal_initial_host(tmp_path, monkeypatch):
+    monkeypatch.setattr(rp, "initial_host_blocked", _REAL_HOST_GUARD)  # real guard
+    d = make_bundle(tmp_path, host="169.254.169.254", auth=False)      # tampered bundle
+    sent = {"n": 0}
+    monkeypatch.setattr(poc, "capture", lambda *a, **k: sent.__setitem__("n", 1))
+    r = rp.replay_one(d, timeout=3, confirm_unsafe=False, marker_override="x", env={})
+    assert r["verdict"] == rp.BLOCKED
+    assert sent["n"] == 0  # the first request never fired at cloud metadata
+
+
+# ---------------------------------------------------------------------------
+# Review fix 3 — guard/redirect errors are BLOCKED, not UNREACHABLE
+# ---------------------------------------------------------------------------
+
+
+def test_verdict_blocked_is_distinct_from_unreachable():
+    v = rp.decide_verdict(200, "sha", "m",
+                          rp.Observed(reachable=False, blocked=True, error="ssrf"))
+    assert v.verdict == rp.BLOCKED
+
+
+def _raise(exc):
+    def _f(*a, **k):
+        raise exc
+    return _f
+
+
+def test_redirect_to_internal_is_blocked_not_unreachable(tmp_path, monkeypatch):
+    d = make_bundle(tmp_path, auth=False)
+    monkeypatch.setattr(poc, "capture", _raise(urllib.error.URLError(
+        "blocked redirect to disallowed host (SSRF guard): '169.254.169.254'")))
+    r = rp.replay_one(d, timeout=3, confirm_unsafe=False, marker_override=None, env={})
+    assert r["verdict"] == rp.BLOCKED  # a bug that now 302s internal is NOT masked as fixed
+
+
+def test_real_connection_error_is_unreachable(tmp_path, monkeypatch):
+    d = make_bundle(tmp_path, auth=False)
+    monkeypatch.setattr(poc, "capture", _raise(urllib.error.URLError("Connection refused")))
+    r = rp.replay_one(d, timeout=3, confirm_unsafe=False, marker_override="x", env={})
+    assert r["verdict"] == rp.UNREACHABLE
