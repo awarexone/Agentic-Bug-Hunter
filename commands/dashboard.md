@@ -49,12 +49,18 @@ tools/hunt_dashboard.py export -o dashboard.html
 |---|---|
 | `/` | the dashboard (auto-refreshes every 30s) |
 | `/api/state` | the same data as JSON — for scripting or other tools |
-| `/file?path=<rel>` | a finding/report/gallery, restricted to the repo root |
+| `/file?path=<rel>` | a finding/report, restricted to the repo root |
 
 ## Safety
 
-- Binds to `127.0.0.1` — never exposed to the network.
-- `/file` resolves paths under the repo root only; traversal (`../`) is refused
-  and only viewable extensions (`.md`/`.txt`/`.json`/`.html`/images) are served.
-- All recon-derived text (URLs, tech banners, evidence) is HTML-escaped, so a
-  malicious value captured during recon cannot execute in the dashboard.
+- Binds to `127.0.0.1` by default. Binding elsewhere prints a loud warning; a
+  **Host-header allow-list** (loopback + the bind host + any `--allow-host`) blocks
+  **DNS-rebinding** — a malicious page pointing its domain at your loopback still
+  sends a foreign `Host` and gets a `403`.
+- `/file` resolves paths under the repo root only; traversal (`../`) is refused and
+  only viewable extensions are served.
+- Captured HTML is **served as `text/plain`** (with `X-Content-Type-Options:
+  nosniff`), never as active HTML — a recon/PoC-captured response can't run JS in
+  the dashboard's origin and exfil `/api/state`.
+- All recon-derived text (URLs, tech banners, evidence) is HTML-escaped in the
+  dashboard itself, so a malicious captured value cannot execute.

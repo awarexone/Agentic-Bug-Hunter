@@ -19,7 +19,9 @@ Two modes, both pure-stdlib (zero dependencies — same tech as demo/app.py):
       Live local server. Re-reads state on every load, auto-refreshes.
       /            → the dashboard
       /api/state   → the same data as JSON (for scripting / other tools)
-      /file?path=  → safely view a finding/report/gallery (within --root only)
+      /file?path=  → view a finding/report within --root (HTML served inert as
+                     text/plain so a captured response can't run JS in our origin)
+      Binds to loopback and enforces a Host-header allow-list (DNS-rebinding guard).
 
   hunt_dashboard.py export -o dashboard.html [--root DIR]
       Write a single self-contained HTML snapshot (shareable, e.g. as report
@@ -204,17 +206,18 @@ def collect_state(root: str) -> dict:
         status_totals[l.get("status", "new")] = status_totals.get(l.get("status", "new"), 0) + 1
     findings = _collect_docs(root, "findings")
     reports = _collect_docs(root, "reports")
+    recon = collect_recon(root)  # compute once; reused in 'recon' and totals below
     return {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ"),
         "root": root,
         "boards": boards,
-        "recon": collect_recon(root),
+        "recon": recon,
         "findings": findings,
         "reports": reports,
         "galleries": collect_galleries(root),
         "memory": collect_memory(root),
         "totals": {
-            "targets": len(set(list(boards) + list(collect_recon(root)))),
+            "targets": len(set(list(boards) + list(recon))),
             "leads": len(all_leads),
             "untouched": status_totals.get("new", 0),
             "investigating": status_totals.get("investigating", 0),
@@ -445,8 +448,30 @@ def _wrap_text(rel: str, body: str) -> bytes:
 # HTTP server
 # ---------------------------------------------------------------------------
 
+# Host header values that mean "this is the local machine". Any other Host on an
+# incoming request means the browser resolved some *other* name to our IP — the
+# signature of a DNS-rebinding attack — so we reject it.
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 
-def make_handler(root: str):
+
+def host_allowed(host_header: str, allowed: set[str]) -> bool:
+    """True if the request's Host header names an allowed host (port ignored).
+    Defeats DNS rebinding: a malicious page that points its domain at 127.0.0.1
+    still sends `Host: evil.example`, which is not in the loopback allow-list."""
+    h = (host_header or "").strip().lower()
+    if not h:
+        return False
+    if h.startswith("["):                      # [::1] or [::1]:port
+        name = h[:h.index("]") + 1] if "]" in h else h
+        candidates = {name, name.strip("[]")}
+    elif h.count(":") == 1:                     # host:port (not bare IPv6)
+        candidates = {h.rsplit(":", 1)[0]}
+    else:
+        candidates = {h}
+    return bool(candidates & allowed)
+
+
+def make_handler(root: str, allowed_hosts: set[str]):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):  # quiet
             pass
@@ -456,6 +481,8 @@ def make_handler(root: str):
                 body = body.encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", ctype)
+            # Never let a browser MIME-sniff a text/plain body back into HTML.
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":
@@ -465,6 +492,11 @@ def make_handler(root: str):
             self.do_GET()
 
         def do_GET(self):
+            # DNS-rebinding guard — must run before anything reads local state.
+            if not host_allowed(self.headers.get("Host", ""), allowed_hosts):
+                self._send(403, "forbidden: unrecognized Host (DNS-rebinding guard)",
+                           "text/plain; charset=utf-8")
+                return
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/":
                 self._send(200, render_dashboard(collect_state(root), live=True))
@@ -475,7 +507,7 @@ def make_handler(root: str):
                 rel = urllib.parse.parse_qs(parsed.query).get("path", [""])[0]
                 full = safe_path(root, rel)
                 if not full:
-                    self._send(404, "not found or not allowed")
+                    self._send(404, "not found or not allowed", "text/plain; charset=utf-8")
                     return
                 ext = os.path.splitext(full)[1].lower()
                 with open(full, "rb") as fh:
@@ -483,20 +515,40 @@ def make_handler(root: str):
                 if ext in (".md", ".txt", ".json"):
                     self._send(200, _wrap_text(rel, data.decode("utf-8", "replace")))
                 elif ext == ".html":
-                    self._send(200, data)
+                    # Untrusted: a recon/PoC-captured response saved as .html would
+                    # otherwise run as live JS in our origin and exfil /api/state.
+                    # Serve as inert text, never as active HTML.
+                    self._send(200, data, "text/plain; charset=utf-8")
                 else:
                     ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
                     self._send(200, data, ctype)
             else:
-                self._send(404, "not found")
+                self._send(404, "not found", "text/plain; charset=utf-8")
 
     return Handler
 
 
-def serve(root: str, host: str, port: int):
-    httpd = ThreadingHTTPServer((host, port), make_handler(root))
-    url = f"http://{host}:{port}"
-    print(f"[+] Hunt Dashboard live at {url}")
+def build_allowed_hosts(host: str, extra: list[str] | None = None) -> set[str]:
+    """Loopback names are always allowed; a specific (non-wildcard) bind host is
+    added, plus any operator-provided --allow-host values."""
+    allowed = set(_LOOPBACK_HOSTS)
+    if host.lower() not in {"0.0.0.0", "::", ""}:
+        allowed.add(host.lower())
+    for a in (extra or []):
+        allowed.add(a.strip().lower())
+    return allowed
+
+
+def serve(root: str, host: str, port: int, allow_hosts: list[str] | None = None):
+    allowed = build_allowed_hosts(host, allow_hosts)
+    if host.lower() not in {"127.0.0.1", "localhost", "::1"}:
+        print("[!] WARNING: binding to a non-loopback host "
+              f"({host}) exposes this UNAUTHENTICATED dashboard to your network.")
+        print("[!] It reads local findings/recon/memory. Only do this on a trusted,")
+        print("[!] isolated network. The Host-header guard still blocks DNS rebinding;")
+        print(f"[!] reach it via an allowed Host {sorted(allowed)} or pass --allow-host.")
+    httpd = ThreadingHTTPServer((host, port), make_handler(root, allowed))
+    print(f"[+] Hunt Dashboard live at http://{host}:{port}")
     print(f"[+] Serving state from: {root}")
     print("[+] Ctrl-C to stop.")
     try:
@@ -522,6 +574,9 @@ def main(argv=None):
     ps.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")
     ps.add_argument("--port", type=int, default=8777, help="bind port (default: 8777)")
     ps.add_argument("--root", default=ROOT_DEFAULT, help="repo root to read state from")
+    ps.add_argument("--allow-host", action="append", default=[],
+                    help="extra Host header value to accept (repeatable; for reverse "
+                         "proxies / non-loopback binds). Loopback is always allowed.")
 
     pe = sub.add_parser("export", help="write a self-contained HTML snapshot")
     pe.add_argument("-o", "--out", required=True, help="output .html file")
@@ -529,7 +584,7 @@ def main(argv=None):
 
     args = ap.parse_args(argv)
     if args.cmd == "serve":
-        serve(os.path.abspath(args.root), args.host, args.port)
+        serve(os.path.abspath(args.root), args.host, args.port, args.allow_host)
     elif args.cmd == "export":
         export(os.path.abspath(args.root), args.out)
     return 0

