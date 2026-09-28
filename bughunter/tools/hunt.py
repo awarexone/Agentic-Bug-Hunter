@@ -112,6 +112,29 @@ def _validate_domain_for_path(domain: str) -> str:
     return domain
 
 
+# Characters that have meaning to /bin/sh. A target is a hostname, IP, CIDR,
+# or file path — none of these legitimately contain any of them. Rejecting the
+# set closes the command-injection gap in issue #153: user-controlled targets
+# flow into shell=True recon/scan/cve/zero-day/graphql/lead-board strings, and
+# $(), backticks, ;, |, & etc. were being evaluated by the shell.
+_TARGET_DENY = frozenset(" \t\r\n$`;|&<>(){}[]!*?~\"'\\")
+
+
+def _validate_target(target: str) -> str:
+    """Reject any target carrying shell metacharacters or whitespace before it
+    reaches a shell=True command string. Hostnames, IPs, CIDRs (`/`), and unix
+    file paths (`/`, `.`, `-`, `_`) all pass; injection payloads do not."""
+    if not target or len(target) > 255:
+        raise ValueError(f"invalid target: {target!r}")
+    bad = _TARGET_DENY & set(target)
+    if bad:
+        raise ValueError(
+            f"invalid target {target!r}: contains disallowed "
+            f"character(s) {''.join(sorted(bad))!r}"
+        )
+    return target
+
+
 def _resolve_recon_dir(domain: str) -> str:
     domain = _validate_domain_for_path(domain)
     return os.path.join(RECON_DIR, domain)
@@ -737,6 +760,19 @@ def hunt_target(
     graphql=False,
 ):
     """Run the full hunt pipeline on a single target."""
+    try:
+        domain = _validate_target(domain)
+    except ValueError as exc:
+        log("err", str(exc))
+        return {
+            "domain": domain,
+            "success": False,
+            "recon": False,
+            "scan": False,
+            "leads": False,
+            "reports": 0,
+        }
+
     result = {
         "domain": domain,
         "success": True,
