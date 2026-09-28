@@ -38,3 +38,28 @@ jobs:
 
       - name: Run test suite
         run: pytest -q
+
+  bugbench:
+    name: bugbench (detection-quality gate)
+    runs-on: ubuntu-latest
+    # NON-BLOCKING while the corpus is small: this reports detection quality on
+    # every PR but must not red-gate unrelated PRs if one detector regresses or a
+    # newly-added hard case fails. Flip to blocking (remove continue-on-error and
+    # make it a required check) once the corpus is broad enough to trust as a gate.
+    # NOTE: until then, adding a currently-failing case will show this job red but
+    # will NOT block merges.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Runs the toolkit's detectors against a ground-truth corpus and reports
+      # precision / recall / false-positive rate. Threshold is strict so quality
+      # regressions are visible; the job is continue-on-error so it informs
+      # without blocking while the corpus matures.
+      - name: Run BugBench detection-quality gate
+        run: python bughunter/tools/bench.py run --min-precision 1.0 --max-fp-rate 0.0
