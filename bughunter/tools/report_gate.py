@@ -38,16 +38,27 @@ class Decision:
     verdict: str | None = None
 
 
-def gate(record: dict | None) -> Decision:
+def gate(record: dict | None, expected_evidence_sha: str | None = None) -> Decision:
     """Pure, fail-closed policy: only a well-formed, reportable verification/1
-    record allows a report. Everything else is BLOCKED."""
+    record allows a report. Everything else is BLOCKED.
+
+    When `expected_evidence_sha` is supplied (the response SHA-256 recorded in the
+    bundle's manifest), the record's `evidence_sha256` must match it. This binds
+    the verdict to *this* bundle's evidence, so a verification.json copied from a
+    different finding — or left over from an earlier, different response — can't
+    authorize a report. It is not a signature (anyone who can write both files can
+    still forge both); it detects stale/mismatched records, which is the practical
+    integrity gain given both files live in the same local bundle dir."""
     if record is None:
         return Decision(False, "no verification record — run /verify before reporting (fail-closed)")
     if record.get("schema") != _VERIFICATION_SCHEMA:
         return Decision(False, f"unrecognized verification schema {record.get('schema')!r}")
     verdict = record.get("verdict")
+    if expected_evidence_sha is not None and record.get("evidence_sha256") != expected_evidence_sha:
+        return Decision(False, "verification does not match this bundle's evidence "
+                        "(stale or mismatched record)", verdict)
     if record.get("reportable") is True and verdict == "PROVEN":
-        return Decision(True, "PROVEN — verification on record", verdict)
+        return Decision(True, "PROVEN — verification bound to this bundle's evidence", verdict)
     return Decision(False, f"not reportable (verdict: {verdict})", verdict)
 
 
@@ -63,8 +74,19 @@ def read_record(bundle_dir: str) -> dict | None:
         return None
 
 
+def _bundle_evidence_sha(bundle_dir: str) -> str | None:
+    """The response SHA-256 recorded in the bundle's manifest, used to bind a
+    verification record to this specific bundle. None if unavailable."""
+    try:
+        with open(os.path.join(bundle_dir, "bundle.json"), encoding="utf-8") as fh:
+            manifest = json.load(fh)
+        return (manifest.get("exchange") or {}).get("response_sha256")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def check_bundle(bundle_dir: str) -> Decision:
-    return gate(read_record(bundle_dir))
+    return gate(read_record(bundle_dir), _bundle_evidence_sha(bundle_dir))
 
 
 def find_bundles(root: str) -> list[str]:
