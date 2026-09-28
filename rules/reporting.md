@@ -4,6 +4,23 @@ Report quality directly impacts payout. Triagers are busy. Make their job easy.
 
 ---
 
+## 0. NO REPORT WITHOUT A PROVEN VERIFICATION (fail-closed)
+
+Before a report is written, the finding MUST have an independent, reproducible
+verification on record. This is the Verification Spine:
+
+1. Capture proof: `/poc` → produces the evidence bundle.
+2. Prove it: `/verify check <bundle-dir> --marker "<signal>"` → re-derives the bug
+   and writes `verification.json`. Only a `PROVEN` verdict is reportable.
+3. Enforce it: `tools/report_gate.py check <bundle-dir>` — exits non-zero unless a
+   `PROVEN` verification record exists. **Fail-closed: no record → BLOCKED.**
+
+If the gate blocks, DO NOT write the report. A finding that cannot be
+independently proven is not a finding yet — say so and stop. This is what keeps
+the toolkit's false-positive rate near zero (measurable via `/bench`).
+
+---
+
 ## 1. NEVER USE THEORETICAL LANGUAGE
 
 ```
