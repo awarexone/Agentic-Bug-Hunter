@@ -269,11 +269,42 @@ def run_cases(cases: list[Case]) -> dict[str, DetectorResult]:
 # ---------------------------------------------------------------------------
 
 
+# Severity ordering for min_severity enforcement. cors emits MEDIUM_LOW for "low".
+SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "medium_low": 1, "low": 1,
+                 "informational": 0, "info": 0, "none": 0, "": 0}
+
+
+def _sev_rank(sev: str | None) -> int:
+    return SEVERITY_RANK.get((sev or "").strip().lower(), 0)
+
+
+def meets_min_severity(case: Case, result: DetectorResult) -> bool:
+    """A detection must reach the case's required severity to count as a catch.
+    Without this, a detector that downgrades CRITICAL->LOW would still 'pass' —
+    the exact gap this enforces."""
+    min_sev = case.expected.get("min_severity")
+    if not min_sev:
+        return True
+    return _sev_rank(result.severity) >= _sev_rank(min_sev)
+
+
+def predicted_positive(case: Case, result: DetectorResult) -> bool:
+    """Does the detector's result count as correctly flagging THIS case? For a
+    vulnerable case with a min_severity, a below-severity detection is a miss."""
+    if not result.vulnerable:
+        return False
+    if case.is_vulnerable and not meets_min_severity(case, result):
+        return False  # flagged, but below required severity → not a valid catch
+    return True
+
+
 def evaluate(cases: list[Case]) -> dict:
     """Run every case and compute overall + per-detector metrics. Returns a
     plain dict so it serializes straight to JSON for CI."""
     results = run_cases(cases)
-    preds = {cid: r.vulnerable for cid, r in results.items()}
+    # min_severity-aware prediction: a downgrade below the required severity is
+    # NOT counted as catching the bug (see meets_min_severity / the reviewer note).
+    preds = {c.id: predicted_positive(c, results[c.id]) for c in cases}
     overall = score_cases(cases, preds)
     detectors = sorted({c.detector for c in cases})
     per = {det: score_cases([c for c in cases if c.detector == det], preds)
@@ -281,15 +312,18 @@ def evaluate(cases: list[Case]) -> dict:
     # Actionable failure rows: what did we get wrong, and how.
     failures = []
     for c in cases:
+        r = results[c.id]
         pred = preds.get(c.id, False)
         if pred and not c.is_vulnerable:
             kind = "false_positive"   # cried wolf
         elif not pred and c.is_vulnerable:
-            kind = "miss"             # missed a real bug
+            # distinguish a severity downgrade from missing the bug entirely
+            kind = ("severity_downgrade" if r.vulnerable
+                    and not meets_min_severity(c, r) else "miss")
         else:
             continue
         failures.append({"id": c.id, "detector": c.detector, "kind": kind,
-                         "detail": results[c.id].detail})
+                         "detail": r.detail, "severity": r.severity})
     return {"overall": overall, "per_detector": per,
             "failures": failures, "results": results, "predictions": preds}
 

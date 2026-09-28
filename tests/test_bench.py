@@ -279,3 +279,58 @@ def test_cli_run_writes_report_file(tmp_path):
     rc = bench.main(["run", "--report", str(out)])
     assert rc == 0
     assert "detection quality" in out.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# min_severity enforcement (review fix): a severity downgrade is NOT a catch
+# ---------------------------------------------------------------------------
+
+
+def test_meets_min_severity_ranking():
+    hi = bench.Case(id="c", detector="cors", expected={"vulnerable": True, "min_severity": "high"})
+    assert bench.meets_min_severity(hi, bench.DetectorResult(True, "CRITICAL"))
+    assert bench.meets_min_severity(hi, bench.DetectorResult(True, "HIGH"))
+    assert not bench.meets_min_severity(hi, bench.DetectorResult(True, "MEDIUM"))
+    assert not bench.meets_min_severity(hi, bench.DetectorResult(True, "MEDIUM_LOW"))
+    # no min_severity declared → any severity is acceptable
+    no_min = bench.Case(id="c", detector="cors", expected={"vulnerable": True})
+    assert bench.meets_min_severity(no_min, bench.DetectorResult(True, "LOW"))
+
+
+def test_severity_downgrade_counts_as_a_miss(monkeypatch):
+    """A detector that flags a CRITICAL case at LOW must NOT pass — it's a miss,
+    not a catch. Guards against the 'min_severity silently ignored' gap."""
+    case = bench.Case(id="dg", detector="stub_low",
+                      expected={"vulnerable": True, "min_severity": "high"})
+
+    @bench.detector("stub_low")
+    def _stub(inp):
+        return bench.DetectorResult(True, "LOW", "flagged but downgraded")
+
+    ev = bench.evaluate([case])
+    assert ev["overall"].fn == 1          # counted as missed, not caught
+    assert ev["overall"].tp == 0
+    assert ev["failures"][0]["kind"] == "severity_downgrade"
+
+
+def test_at_or_above_min_severity_is_a_catch():
+    case = bench.Case(id="ok", detector="stub_hi",
+                      expected={"vulnerable": True, "min_severity": "high"})
+
+    @bench.detector("stub_hi")
+    def _stub(inp):
+        return bench.DetectorResult(True, "CRITICAL", "flagged critical")
+
+    ev = bench.evaluate([case])
+    assert ev["overall"].tp == 1 and ev["overall"].fn == 0
+
+
+def test_expanded_shipped_corpus_scores_clean():
+    """The shipped corpus (incl. null-origin + wildcard+creds, each with a
+    min_severity) must still be caught at the required severity, 0 FP."""
+    cases = bench.load_cases()
+    assert len(cases) >= 4
+    ev = bench.evaluate(cases)
+    assert ev["overall"].fp == 0
+    assert ev["overall"].fn == 0
+    assert ev["overall"].precision == 1.0
