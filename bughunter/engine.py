@@ -25,6 +25,9 @@ Providers (auto-detected, first available wins):
                     prefix using each provider's own key; or set
                     LITELLM_API_KEY/LITELLM_API_BASE for a LiteLLM proxy
                     docs: https://docs.litellm.ai
+         requesty   - multi-model gateway, set REQUESTY_API_KEY
+                    get key: https://app.requesty.ai/api-keys
+                    docs: https://docs.requesty.ai
 
 Usage:
   ./engine.py setup                        one-time config wizard
@@ -109,8 +112,18 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict):
+    # The config can hold API keys. write_text() would create the file under
+    # the process umask (often 0o644) and only chmod afterward, leaving a brief
+    # world-readable window on a multi-user host. Create it 0o600 from the
+    # start (and tighten the dir), then chmod in case it pre-existed.
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(cfg, indent=2))
+    try:
+        os.chmod(CONFIG.parent, 0o700)
+    except OSError:
+        pass
+    fd = os.open(str(CONFIG), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(cfg, indent=2))
     os.chmod(CONFIG, 0o600)
 
 
@@ -215,14 +228,17 @@ def _get_brain(provider: str | None = None):
     return Brain(model=model, provider=provider)
 
 
-def _run_shell(cmd: list[str], cwd: str | None = None, timeout: int = 3600) -> tuple[bool, str]:
+def _run_shell(cmd: list[str], cwd: str | None = None, timeout: int = 3600,
+               env: dict | None = None) -> tuple[bool, str]:
     """Run a command with live output, return (success, combined_output).
     Takes an argv list, not a shell string — see
     SECURITY-REVIEW-2026-08-22.md finding #5 for why shell=True with
-    f-string-interpolated targets was a command injection bug."""
+    f-string-interpolated targets was a command injection bug.
+    `env`, when given, is merged over the current environment."""
+    proc_env = {**os.environ, **env} if env else None
     try:
         proc = subprocess.Popen(
-            cmd, shell=False, cwd=cwd or str(HERE),
+            cmd, shell=False, cwd=cwd or str(HERE), env=proc_env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
         lines = []
@@ -255,6 +271,7 @@ def cmd_setup(args):
         "8":  ("orcarouter", "OrcaRouter (multi-model)       — needs ORCAROUTER_API_KEY"),
         "9":  ("fluxion",    "Fluxion    (multi-model)       — needs FLUXION_API_KEY"),
         "10": ("litellm",    "LiteLLM    (100+ providers)    — uses per-provider keys or LITELLM_API_KEY"),
+        "11": ("requesty",   "Requesty   (multi-model)       - needs REQUESTY_API_KEY"),
     }
 
     requested_provider = (
@@ -290,6 +307,7 @@ def cmd_setup(args):
         "openrouter": "OPENROUTER_API_KEY",
         "orcarouter": "ORCAROUTER_API_KEY",
         "fluxion":    "FLUXION_API_KEY",
+        "requesty":   "REQUESTY_API_KEY",
     }
 
     if provider in env_map:
@@ -392,6 +410,7 @@ def cmd_providers(args):
         "openrouter": "OPENROUTER_API_KEY",
         "orcarouter": "ORCAROUTER_API_KEY",
         "fluxion":    "FLUXION_API_KEY",
+        "requesty":   "REQUESTY_API_KEY",
     }
     tier = {
         "ollama": "FREE (local)", "groq": "FREE tier",
@@ -400,6 +419,7 @@ def cmd_providers(args):
         "openrouter": "subscription",
         "orcarouter": "subscription",
         "fluxion": "subscription",
+        "requesty": "pay-as-you-go",
     }
 
     print(f"\n  {'PROVIDER':<12} {'TIER':<16} {'STATUS':<20} {'NOTE'}")
@@ -450,19 +470,32 @@ def cmd_models(args):
 
 def cmd_recon(args):
     """Run recon pipeline then AI surface analysis."""
+    from tools.target_normalize import safe_target_dirname
+
     target = args.target
-    header(f"Recon: {target}")
+    # The scanners need a bare host; the output dir must match what
+    # recon_engine.sh writes. Both derive it the same way (host, no scheme/port),
+    # and we pin RECON_OUT_DIR so the two never disagree across install layouts.
+    # Reject anything that isn't a safe single path component — never fall back
+    # to the raw target, or `recon ../../etc/x` / `recon /etc/x` would write
+    # outside the recon sandbox.
+    host = safe_target_dirname(target)
+    if not host:
+        err(f"Refusing unsafe target {target!r} — expected a hostname, IP or CIDR")
+        return
+    recon_dir = RECON / host
+    header(f"Recon: {host}")
 
     script = TOOLS / "recon_engine.sh"
     if script.exists():
         info("Running recon pipeline...")
-        success, _ = _run_shell(["bash", str(script), target])
+        success, _ = _run_shell(["bash", str(script), target],
+                                env={"RECON_OUT_DIR": str(recon_dir)})
         if not success:
             warn("Recon had issues — continuing with AI analysis")
     else:
         warn("recon_engine.sh not found — skipping to AI analysis")
 
-    recon_dir = RECON / target
     info("Running AI surface analysis...")
     brain = _get_brain()
     result = brain.analyze_recon(str(recon_dir) if recon_dir.exists() else target)
@@ -474,18 +507,26 @@ def cmd_recon(args):
 
 def cmd_hunt(args):
     """Full hunt pipeline: recon + vuln scan + AI analysis."""
+    from tools.target_normalize import safe_target_dirname
+
     target = args.target
-    header(f"Hunt: {target}")
+    host = safe_target_dirname(target)
+    if not host:
+        err(f"Refusing unsafe target {target!r} — expected a hostname, IP or CIDR")
+        return
+    header(f"Hunt: {host}")
+
+    recon_dir = RECON / host
 
     # Run recon
     script = TOOLS / "recon_engine.sh"
     if script.exists():
         info("Phase 1: Recon...")
-        _run_shell(["bash", str(script), target])
+        _run_shell(["bash", str(script), target],
+                   env={"RECON_OUT_DIR": str(recon_dir)})
 
     # Run vuln scan
     vuln_script = TOOLS / "vuln_scanner.sh"
-    recon_dir = RECON / target
     if vuln_script.exists() and recon_dir.exists():
         info("Phase 2: Vuln scan...")
         _run_shell(["bash", str(vuln_script), str(recon_dir)])
@@ -493,13 +534,13 @@ def cmd_hunt(args):
     # AI analysis
     info("Phase 3: AI analysis...")
     brain = _get_brain()
-    findings_dir = FINDINGS / target
+    findings_dir = FINDINGS / host
     if findings_dir.exists():
         brain.interpret_scan(str(findings_dir))
     elif recon_dir.exists():
         brain.analyze_recon(str(recon_dir))
     else:
-        warn(f"No data for {target} — run recon first")
+        warn(f"No data for {host} — run recon first")
 
 
 def cmd_validate(args):
@@ -754,7 +795,7 @@ def main():
         """),
     )
     parser.add_argument("--provider", "-p",
-                        help="Force provider: ollama / groq / deepseek / claude / openai / grok / openrouter / orcarouter / fluxion / litellm")
+                        help="Force provider: ollama / groq / deepseek / claude / openai / grok / openrouter / orcarouter / fluxion / litellm / requesty")
     parser.add_argument("--model", "-m", help="Force model for this invocation (for example qwen3:14b)")
     parser.add_argument("--no-banner", action="store_true", help="Suppress banner")
 
@@ -764,7 +805,7 @@ def main():
     p_setup.add_argument(
         "--provider", dest="setup_provider",
         choices=["ollama", "groq", "deepseek", "claude", "openai", "grok",
-                 "openrouter", "orcarouter", "fluxion", "litellm"],
+                 "openrouter", "orcarouter", "fluxion", "litellm", "requesty"],
         help="Provider to persist (skips the provider prompt)",
     )
     p_setup.add_argument(
@@ -817,7 +858,7 @@ def main():
     cfg = load_config()
     for env_var in ("GROQ_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY",
                     "OPENAI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY",
-                    "ORCAROUTER_API_KEY", "FLUXION_API_KEY"):
+                    "ORCAROUTER_API_KEY", "FLUXION_API_KEY", "REQUESTY_API_KEY"):
         if not os.environ.get(env_var) and cfg.get(env_var):
             os.environ[env_var] = cfg[env_var]
 

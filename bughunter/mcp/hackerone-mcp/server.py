@@ -192,11 +192,11 @@ def get_program_stats(program: str) -> dict:
         handle
         url
         offers_bounties
-        default_currency
+        currency
         base_bounty
         resolved_report_count
-        average_time_to_bounty_awarded
-        average_time_to_first_program_response
+        average_bounty_lower_amount
+        average_bounty_upper_amount
         launched_at
         state
       }}
@@ -212,11 +212,15 @@ def get_program_stats(program: str) -> dict:
         "name": team.get("name", ""),
         "url": team.get("url", ""),
         "offers_bounties": team.get("offers_bounties", False),
-        "currency": team.get("default_currency", "USD"),
+        "currency": (team.get("currency") or "usd").upper(),
         "base_bounty": team.get("base_bounty"),
         "resolved_reports": team.get("resolved_report_count"),
-        "avg_days_to_bounty": team.get("average_time_to_bounty_awarded"),
-        "avg_days_to_first_response": team.get("average_time_to_first_program_response"),
+        # H1 dropped the old `average_time_to_bounty_awarded` /
+        # `average_time_to_first_program_response` fields. The closest
+        # replacement is a dollar range, not a duration in days — so these
+        # are bounty amounts, NOT `avg_days_to_bounty`.
+        "avg_bounty_lower": team.get("average_bounty_lower_amount"),
+        "avg_bounty_upper": team.get("average_bounty_upper_amount"),
         "launched_at": (team.get("launched_at") or "")[:10],
         "state": team.get("state", ""),
     }
