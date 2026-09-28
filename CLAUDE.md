@@ -67,6 +67,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 | `/llm-redteam` | `/llm-redteam --url <chat-endpoint>` — LLM red-team corpus: prompt-injection, jailbreak, system-prompt leak, exfil, indirect injection |
 | `/poc` | `/poc capture <url> [-H ...] \| from-request req.txt [--response resp.txt]` — reproducible PoC evidence bundle (request/response, curl, HAR, screenshot, report-ready evidence.md); secrets redacted by default |
 | `/dashboard` | `/dashboard [--port 8777] \| --export dashboard.html` — local web Hunt Dashboard: leads, recon surface, findings, reports, galleries, memory flywheel, in one live view |
+| `/oracle` | `/oracle train \| rank <target> \| score --class idor --url <u> \| eval` — self-learning prioritizer: trains on your journal outcomes to predict P(lead becomes a real finding), with per-feature explanations + leave-one-out CV vs the static scorer |
 
 ### Agents (9 specialized agents)
 
@@ -120,6 +121,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 - `tools/llm_redteam.py` — LLM red-team corpus runner (prompt-injection/jailbreak/system-prompt-leak/exfil/indirect/guardrail-bypass) with canary detection
 - `tools/poc_bundler.py` — PoC evidence bundler (`capture` live via SSRF-guarded `safe_http`, or `from-request` offline from a saved/Burp request). Emits `request.http`, `response.http`, `repro.sh` (curl), `evidence.har` (HAR 1.2), optional `screenshot.png`, `evidence.md` (report-ready), and `bundle.json` (manifest + response SHA-256) under `findings/<target>-<class>/evidence/<id>/`. Secrets redacted by default (repro.sh uses `$ENV` placeholders); refuses PUT/DELETE/PATCH without `--confirm-unsafe`. See `/poc`.
 - `tools/hunt_dashboard.py` — local web Hunt Dashboard (`serve`/`export`); reads `memory/leads/`, `recon/`, `findings/`, `reports/`, galleries, and `hunt-memory/` into one live view. Pure stdlib, binds to 127.0.0.1, HTML-escapes all recon-derived data, path-traversal-guarded `/file` endpoint. Distinct from `tools/dashboard.py` (the in-terminal ANSI progress TUI). See `/dashboard`.
+- `tools/oracle.py` — self-learning lead/finding prioritizer. Trains a smoothed Naive-Bayes log-odds model on `journal.jsonl` outcomes (confirmed/rejected + payout/severity/vuln-class/endpoint/tech features) to score P(lead becomes a real finding), replacing the static regex priority with a data-driven, per-feature-explainable rank. Cold-start prior blends toward the learned model as evidence grows; `eval` runs leave-one-out CV of the deployed (blended) scorer against the prior + majority baselines to prove lift. `train` / `eval` / `rank <target>` (reuses `lead_board`) / `score`. Pure-stdlib, deterministic, read-only. See `/oracle`.
 - Full catalogue: **`tools/README.md`** (~50 tools). `hunt.py` auto-ingests leads after recon (`--graphql` / `--cve-hunt` / `--skip-leads` flags).
 
 ### External tool references
