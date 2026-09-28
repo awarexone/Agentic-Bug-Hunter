@@ -15,7 +15,7 @@ MCP is an **adapter** over the existing research engine — not a second scanner
 ## Quick start
 
 ```bash
-pip install 'mcp>=1.28'
+pip install 'mcp>=2.2.0'
 ./install.sh --agent mcp
 bughunter mcp doctor
 bughunter mcp serve

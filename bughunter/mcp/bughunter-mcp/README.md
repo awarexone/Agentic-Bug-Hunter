@@ -11,7 +11,7 @@ This does **not** replace:
 ## Run
 
 ```bash
-pip install 'mcp>=1.28'
+pip install 'mcp>=2.2.0'
 python3 mcp/bughunter-mcp/server.py
 # or
 ./install.sh --agent standalone

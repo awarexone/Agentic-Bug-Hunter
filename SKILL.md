@@ -738,7 +738,7 @@ When target has AI agents with tool access, these are the 10 attack classes:
 
 | ID | Vuln Class | What to Test |
 |----|-----------|-------------|
-| ASI01 | Prompt injection | Override system prompt via user input -- make agent ignore its rules |
+| ASI01 | Prompt injection | Subvert the system prompt via user input -- make the agent disregard its rules |
 | ASI02 | Tool misuse | Make AI call tools with attacker-controlled params (SSRF via "fetch URL", RCE via code tool) |
 | ASI03 | Data exfil | Extract training data / PII via crafted prompts that leak context |
 | ASI04 | Privilege escalation | Use AI to access admin-only tools -- agent has broader perms than user |
