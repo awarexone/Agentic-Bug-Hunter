@@ -37,15 +37,21 @@ tools/bench.py run --min-precision 1.0 --max-fp-rate 0.0
   *This is the headline trust metric.* Accuracy is deliberately **not** the
   headline: on a mostly-safe corpus a do-nothing detector scores high accuracy
   while catching zero bugs.
-- **failures** — the exact cases that were false positives or misses, so a
-  regression is actionable, not just a number.
+- **failures** — the exact cases that were false positives, misses, or
+  **severity downgrades**, so a regression is actionable, not just a number.
+
+Scoring enforces each case's `min_severity`: a detector that flags a CRITICAL
+case at LOW is counted as a **miss** (`severity_downgrade`), not a catch — so the
+benchmark can't be fooled by a downgrade. `class` is descriptive metadata.
 
 ## The CI gate
 
 `--min-precision` / `--max-fp-rate` make `/bench run` **exit non-zero** when
-quality drops below the bar, so CI blocks any change that makes a detector
-noisier or less accurate. That turns "we measure quality" into an *enforced*
-guarantee over time.
+quality drops below the bar. In CI the `bugbench` job runs this on every PR but is
+currently **non-blocking** (`continue-on-error`) while the corpus is small — it
+*reports* quality without red-gating unrelated PRs. Flip it to a required check
+once the corpus is broad enough to trust as a hard gate. (Until then, note that a
+currently-failing case shows the job red but does not block merges.)
 
 ## Adding a case
 
