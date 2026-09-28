@@ -151,6 +151,41 @@ def test_loocv_oracle_beats_majority_on_signal():
     assert ev["oracle"]["accuracy"] >= ev["baseline_majority"]["accuracy"]
 
 
+def test_loocv_reports_deployed_and_learned_upper_bound():
+    """The headline 'oracle' number must be the DEPLOYED (blended) scorer users
+    actually get, with a separate learned-only upper bound — so the reported lift
+    never overstates production behaviour."""
+    ev = oc.loocv(_signal_samples(40))
+    assert "oracle" in ev and "oracle_learned_only" in ev
+    # both are valid metric dicts
+    for key in ("oracle", "oracle_learned_only"):
+        assert 0.0 <= ev[key]["accuracy"] <= 1.0
+    # the learned-only bound is never worse than the blended deployed score on a
+    # clean signal (the blend only pulls toward the prior)
+    assert ev["oracle_learned_only"]["accuracy"] >= ev["oracle"]["accuracy"] - 1e-9
+
+
+def test_loocv_deployed_matches_model_score_not_learned_only(monkeypatch):
+    """Regression guard for the review fix: LOOCV must call the deployed score(),
+    not _learned_score(). We tag which path was used and assert it's score()."""
+    calls = {"score": 0, "learned": 0}
+    real_score = oc.OracleModel.score
+    real_learned = oc.OracleModel._learned_score
+
+    def spy_score(self, feats):
+        calls["score"] += 1
+        return real_score(self, feats)
+
+    def spy_learned(self, feats):
+        calls["learned"] += 1
+        return real_learned(self, feats)
+
+    monkeypatch.setattr(oc.OracleModel, "score", spy_score)
+    monkeypatch.setattr(oc.OracleModel, "_learned_score", spy_learned)
+    oc.loocv(_signal_samples(6))
+    assert calls["score"] > 0  # the deployed scorer is exercised per fold
+
+
 def test_loocv_needs_min_samples():
     assert "error" in oc.loocv([({"a"}, 1), ({"b"}, 0)])
 

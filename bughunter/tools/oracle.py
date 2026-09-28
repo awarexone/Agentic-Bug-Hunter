@@ -357,21 +357,30 @@ def _metrics(pairs: list[tuple[int, int]]) -> dict:
 
 def loocv(samples: list[tuple[set[str], int]], threshold: float = 0.5) -> dict:
     """Leave-one-out cross-validation — the honest way to score a small model.
-    Also reports two baselines: majority class, and the heuristic prior alone."""
+
+    The primary "oracle" number scores each held-out fold with the DEPLOYED
+    scorer — `model.score()`, the same blend of learned + cold-start prior that
+    `rank`/`score` actually serve (weight w = n/(n+SHRINKAGE_K)). This is what a
+    user with that much history really gets, so the reported lift never overstates
+    reality. `oracle_learned_only` (pure `_learned_score`, w=1) is reported
+    separately as a learned-only *upper bound* it converges to as data grows.
+    Baselines: the heuristic prior alone, and majority class."""
     if len(samples) < 3:
         return {"error": "need >=3 labelled samples", "n": len(samples)}
-    model_pairs, prior_pairs = [], []
+    deployed_pairs, learned_pairs, prior_pairs = [], [], []
     n_pos = sum(1 for _, y in samples if y == 1)
     majority = 1 if n_pos * 2 >= len(samples) else 0
     for i in range(len(samples)):
         train = samples[:i] + samples[i + 1:]
         feats, actual = samples[i]
         m = OracleModel().train(train)
-        model_pairs.append((1 if m._learned_score(feats) >= threshold else 0, actual))
+        deployed_pairs.append((1 if m.score(feats) >= threshold else 0, actual))          # what users get
+        learned_pairs.append((1 if m._learned_score(feats) >= threshold else 0, actual))    # upper bound
         prior_pairs.append((1 if prior_score(feats) >= threshold else 0, actual))
     majority_pairs = [(majority, a) for _, a in samples]
     return {
-        "oracle": _metrics(model_pairs),
+        "oracle": _metrics(deployed_pairs),                 # deployed (blended) — the honest number
+        "oracle_learned_only": _metrics(learned_pairs),     # learned-only upper bound
         "baseline_prior": _metrics(prior_pairs),
         "baseline_majority": _metrics(majority_pairs),
         "positives": n_pos, "negatives": len(samples) - n_pos,
@@ -416,13 +425,17 @@ def cmd_train(args) -> int:
 
 def _print_eval(ev: dict) -> None:
     o, p, mj = ev["oracle"], ev["baseline_prior"], ev["baseline_majority"]
+    ub = ev.get("oracle_learned_only", o)
     print(f"\n  leave-one-out CV ({ev['positives']} confirmed / {ev['negatives']} rejected):")
-    print(f"    {'model':<18}{'acc':>6}{'prec':>7}{'rec':>7}{'f1':>7}")
-    print(f"    {'Oracle (learned)':<18}{o['accuracy']:>6}{o['precision']:>7}{o['recall']:>7}{o['f1']:>7}")
-    print(f"    {'prior heuristic':<18}{p['accuracy']:>6}{p['precision']:>7}{p['recall']:>7}{p['f1']:>7}")
-    print(f"    {'majority class':<18}{mj['accuracy']:>6}{'—':>7}{'—':>7}{'—':>7}")
+    print(f"    {'model':<26}{'acc':>6}{'prec':>7}{'rec':>7}{'f1':>7}")
+    # The deployed (blended) scorer is the honest headline — it's what rank/score serve.
+    print(f"    {'Oracle (deployed)':<26}{o['accuracy']:>6}{o['precision']:>7}{o['recall']:>7}{o['f1']:>7}")
+    print(f"    {'Oracle (learned-only, UB)':<26}{ub['accuracy']:>6}{ub['precision']:>7}{ub['recall']:>7}{ub['f1']:>7}")
+    print(f"    {'prior heuristic':<26}{p['accuracy']:>6}{p['precision']:>7}{p['recall']:>7}{p['f1']:>7}")
+    print(f"    {'majority class':<26}{mj['accuracy']:>6}{'—':>7}{'—':>7}{'—':>7}")
     lift = round(o["accuracy"] - p["accuracy"], 3)
-    print(f"  → Oracle vs prior heuristic: {'+' if lift >= 0 else ''}{lift} accuracy")
+    print(f"  → Oracle (deployed) vs prior heuristic: {'+' if lift >= 0 else ''}{lift} accuracy")
+    print("    (learned-only UB = upper bound the deployed blend converges to as history grows)")
 
 
 def cmd_eval(args) -> int:
