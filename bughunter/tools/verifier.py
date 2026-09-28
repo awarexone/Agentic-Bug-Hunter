@@ -44,6 +44,7 @@ import sys
 import urllib.error
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 _PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../bughunter
 _TOOLS = os.path.join(_PKG, "tools")
@@ -51,6 +52,25 @@ for _p in (_PKG, _TOOLS):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 import poc_bundler as poc  # noqa: E402  (merged: capture / parse_raw_request / sha256_hex)
+from safe_http import _is_blocked_redirect_target  # noqa: E402  (same SSRF blocklist)
+
+
+def initial_host_blocked(url: str) -> bool:
+    """True if a URL's initial host is a metadata/private/loopback/link-local
+    target. safe_urlopen only guards redirect hops and the bundle URL is untrusted,
+    so we validate the first host with the same blocklist before ever sending —
+    a tampered bundle can't make verification hit 169.254.169.254 / localhost."""
+    try:
+        return _is_blocked_redirect_target(urlparse(url).hostname)
+    except ValueError:
+        return True
+
+
+def _searchable(headers: list[tuple[str, str]], body: str) -> str:
+    """Header lines + body, so a marker can be matched against header-based classes
+    (open-redirect Location, CORS ACAO, Set-Cookie) — not the body alone."""
+    head = "\n".join(f"{n}: {v}" for n, v in (headers or []))
+    return head + "\n" + (body or "")
 
 # Verdicts
 PROVEN = "PROVEN"
@@ -77,11 +97,13 @@ def now_iso() -> str:
 @dataclass
 class Rederivation:
     """The observable result of trying to independently reproduce a finding."""
-    attempted: bool                 # did we get to actually re-send?
+    attempted: bool                  # did we get to actually re-send?
     reachable: bool = False
-    marker_available: bool = False  # do we even have a signal that proves the bug?
-    marker_present: bool = False    # was that signal in the fresh response?
+    marker_available: bool = False   # do we even have a signal that proves the bug?
+    marker_in_baseline: bool = False # was the marker in the ORIGINAL recorded response?
+    marker_present: bool = False     # is that signal in the FRESH response (headers+body)?
     status: int | None = None
+    fresh_sha256: str | None = None  # hash of what we actually re-fetched
     detail: str = ""
 
 
@@ -107,8 +129,17 @@ def decide(has_bundle: bool, rd: Rederivation) -> Verdict:
         # By policy that is UNPROVEN, never a silent pass.
         return Verdict(UNPROVEN, False,
                        "no confirmation marker — cannot independently prove; add --marker")
+    if not rd.marker_in_baseline:
+        # The marker isn't in the ORIGINAL captured response, so its presence now
+        # doesn't prove THIS bug — it could be a server banner, or attacker input
+        # reflected on an error page. Refuse to mint PROVEN from an uncorroborated
+        # marker. (This is the false-PROVEN guard.)
+        return Verdict(UNPROVEN, False,
+                       "marker not found in the original recorded response — "
+                       "can't treat its presence now as proof of this finding")
     if rd.marker_present:
-        return Verdict(PROVEN, True, f"marker confirmed in fresh response ({rd.status})")
+        return Verdict(PROVEN, True,
+                       f"marker present in both the original and the fresh response ({rd.status})")
     return Verdict(REFUTED, False, f"marker absent on re-derivation ({rd.status})")
 
 
@@ -164,7 +195,16 @@ def load_bundle(bundle_dir: str) -> dict:
         ex.url = meta["url"]
     if meta.get("method"):
         ex.method = meta["method"]
-    return {"manifest": manifest, "exchange": ex}
+    # The original recorded response (headers + body) — used to confirm the marker
+    # was genuinely part of THIS finding before we accept its presence now as proof.
+    original_response = ""
+    try:
+        with open(os.path.join(bundle_dir, "response.http"), encoding="utf-8",
+                  errors="replace") as fh:
+            original_response = fh.read()
+    except OSError:
+        pass
+    return {"manifest": manifest, "exchange": ex, "original_response": original_response}
 
 
 # ---------------------------------------------------------------------------
@@ -185,25 +225,42 @@ def rederive(bundle_dir: str, marker: str | None, confirm_unsafe: bool,
         return Rederivation(attempted=False,
                             detail=f"{ex.method} not re-fired without --confirm-unsafe")
 
+    # SSRF guard on the INITIAL host — the bundle URL is untrusted input.
+    if initial_host_blocked(ex.url):
+        return Rederivation(attempted=False,
+                            detail=f"initial host blocked by SSRF guard: "
+                                   f"{urlparse(ex.url).hostname}")
+
     headers, missing = resolve_headers(ex.request_headers, env)
     if missing:
         return Rederivation(attempted=False,
                             detail="missing secret env var(s): " + ", ".join(sorted(set(missing))))
 
+    # Did the marker appear in the ORIGINAL response? (headers + body). Only then
+    # is its presence now meaningful proof of this finding.
+    marker_in_baseline = bool(marker) and marker in (bundle.get("original_response") or "")
+
     try:
         fresh = poc.capture(ex.url, ex.method, headers, ex.request_body or None, timeout)
     except urllib.error.URLError as e:
         return Rederivation(attempted=True, reachable=False,
+                            marker_available=bool(marker), marker_in_baseline=marker_in_baseline,
                             detail=str(getattr(e, "reason", e)))
     except Exception as e:  # one bad bundle must never break a sweep
         return Rederivation(attempted=True, reachable=False,
+                            marker_available=bool(marker), marker_in_baseline=marker_in_baseline,
                             detail=f"{type(e).__name__}: {e}")
 
+    # Match the marker across the FRESH response's headers AND body, so header-based
+    # classes (open-redirect Location, CORS ACAO, Set-Cookie) aren't wrongly refuted.
+    fresh_text = _searchable(fresh.response_headers, fresh.response_body)
     return Rederivation(
         attempted=True, reachable=True,
         marker_available=bool(marker),
-        marker_present=bool(marker) and marker in (fresh.response_body or ""),
+        marker_in_baseline=marker_in_baseline,
+        marker_present=bool(marker) and marker in fresh_text,
         status=fresh.response_status,
+        fresh_sha256=poc.sha256_hex(fresh.response_body_bytes) if fresh.response_body_bytes else None,
         detail="",
     )
 
@@ -235,9 +292,14 @@ def verify(bundle_dir: str, marker_override: str | None = None,
         "reason": v.reason,
         "method": "marker-rederivation",
         "marker_used": bool(marker),
+        "marker_in_baseline": rd.marker_in_baseline,
         "response_status": rd.status,
         "finding": manifest.get("finding", {}) if has_bundle else {},
+        # evidence_sha256 = the ORIGINAL response hash (binds the record to this
+        # bundle for report_gate); rederived_sha256 = what we actually re-fetched.
         "evidence_sha256": manifest.get("exchange", {}).get("response_sha256"),
+        "rederived_sha256": rd.fresh_sha256,
+        "rederived_status": rd.status,
         "bundle": bundle_dir,
     }
     if has_bundle:
