@@ -355,7 +355,7 @@ install_mcp() {
     echo "  bughunter mcp tools"
     echo ""
     echo "Python SDK:"
-    echo "  pip install 'mcp>=1.28'"
+    echo "  pip install 'mcp>=2.2.0'"
     echo ""
     echo "Claude Code — merge bughunter/mcp/bughunter-mcp/claude-config.json into ~/.claude/settings.json mcpServers"
     echo "OpenCode   — merge bughunter/mcp/bughunter-mcp/opencode-config.json into opencode mcp config"
@@ -365,7 +365,7 @@ install_mcp() {
     echo ""
     if [ "${BBHUNT_SKIP_DEPS:-0}" != "1" ] && command -v pip3 &>/dev/null; then
         echo "Installing mcp SDK (optional)..."
-        pip3 install --quiet 'mcp>=1.28' 2>/dev/null || echo "[!] pip install mcp failed — install manually"
+        pip3 install --quiet 'mcp>=2.2.0' 2>/dev/null || echo "[!] pip install mcp failed — install manually"
     fi
     echo "Done."
 }

@@ -343,7 +343,7 @@ AI Agent → Agentic-Bug-Hunter MCP → Scope → Recon → Hunt → Validate �
 ```
 
 ```bash
-pip install 'mcp>=1.28'
+pip install 'mcp>=2.2.0'
 ./install.sh --agent mcp
 bughunter mcp doctor
 bughunter mcp serve

@@ -42,7 +42,7 @@ def cmd_doctor() -> int:
         print("[+] mcp SDK (MCPServer) import OK")
     except Exception as exc:
         print(f"[!] mcp SDK missing: {exc}")
-        print("    pip install 'mcp>=1.28'")
+        print("    pip install 'mcp>=2.2.0'")
         ok = False
 
     # server file
