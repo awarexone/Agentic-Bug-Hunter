@@ -69,7 +69,7 @@ Or in your prompt: "Run `bash tools/recon_engine.sh target.com` and report the o
 ### "Missing tools"
 
 ```bash
-bash tools/install_tools.sh
+bash install_tools.sh
 ```
 
 Recon needs: `subfinder`, `dnsx`, `httpx` (ProjectDiscovery — not the Python CLI), `katana`, `gau`, `nuclei`, `ffuf`, `nmap`, `gf`, `anew`. The installer handles all of them.

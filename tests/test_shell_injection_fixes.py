@@ -57,3 +57,47 @@ class TestHuntGraphqlAuditNoInjection:
 
         hunt.run_graphql_audit("target.com")
         assert not marker.exists()
+
+
+class TestHuntTargetValidation:
+    """Issue #153: run_recon (and the cve/zero-day/lead-board paths reached
+    through hunt_target) build shell=True strings by interpolating the target.
+    A target of $(...) or `...` was evaluated by the shell. hunt_target must
+    reject any target carrying shell metacharacters before it runs."""
+
+    def _load(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "hunt_v", os.path.join(REPO_ROOT, "bughunter", "tools", "hunt.py")
+        )
+        hunt = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hunt)
+        return hunt
+
+    def test_command_substitution_target_rejected(self):
+        hunt = self._load()
+        for payload in ('$(touch /tmp/x)', '`id`', 'a.com;id', 'a.com|id',
+                        'a.com && id', 'a com', 'a.com>b'):
+            try:
+                hunt._validate_target(payload)
+                assert False, f"accepted malicious target {payload!r}"
+            except ValueError:
+                pass
+
+    def test_legit_targets_pass(self):
+        hunt = self._load()
+        for good in ('example.com', 'sub.example.co.uk', '192.168.1.1',
+                     '10.0.0.0/24', 'targets/list.txt', 'a-b_c.example.com'):
+            assert hunt._validate_target(good) == good
+
+    def test_hunt_target_does_not_execute_injection(self, tmp_path, monkeypatch):
+        hunt = self._load()
+        marker = tmp_path / "should_not_exist_recon"
+        # If validation is bypassed, run_recon would shell-eval this.
+        called = {"recon": False}
+        monkeypatch.setattr(hunt, "run_recon",
+                            lambda *a, **k: called.__setitem__("recon", True))
+        result = hunt.hunt_target(f'$(touch {marker})', recon_only=True)
+        assert not marker.exists()
+        assert result["success"] is False
+        assert called["recon"] is False  # rejected before any shell path

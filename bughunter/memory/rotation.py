@@ -79,7 +79,8 @@ def rotate_if_needed(
 
     # Acquire a lock on the live file to serialize the rotation. Using
     # O_RDONLY + O_CREAT keeps the lock independent of the writer's append fd.
-    fd = os.open(str(path), os.O_RDONLY | os.O_CREAT, 0o644)
+    # 0o600: these memory files may hold secret-bearing recon data.
+    fd = os.open(str(path), os.O_RDONLY | os.O_CREAT, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         # Re-check size under lock — another process may have rotated already.
