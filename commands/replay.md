@@ -30,6 +30,8 @@ tools/replay.py all [root]      # default root: findings/
 | 🟢 `FIXED` | the signal is gone |
 | 🟡 `CHANGED` | response differs from the PoC — a human should look |
 | ⚫ `UNREACHABLE` | the host/endpoint no longer answers |
+| 🛑 `BLOCKED` | the SSRF guard refused the request (initial host or a redirect went internal) — a live signal, **not** "fixed" |
+| 🚫 `OUT_OF_SCOPE` | the target isn't in the supplied scope — not sent |
 | ⚪ `INDETERMINATE` | can't judge (no marker + no baseline, or a missing secret) |
 | ⏭ `SKIPPED_UNSAFE` | a mutating method (PUT/DELETE/PATCH) — needs `--confirm-unsafe` |
 
@@ -46,7 +48,17 @@ tools/replay.py all [root]      # default root: findings/
 
 ## Safety
 
-- Replays through the repo's SSRF-guarded opener (`tools/safe_http.py`).
+- **Scope gate (Critical Rule #1).** Pass `--scope '*.target.com'` (repeatable) or
+  `--scope-file <file>`; every send is checked with `scope_checker.py` and
+  out-of-scope targets are `OUT_OF_SCOPE` and never sent. `all` **refuses to run**
+  with no scope unless you pass `--no-scope` to explicitly assert every stored
+  target is in scope.
+- **SSRF on the first hop.** The bundle URL is untrusted, so the *initial* host is
+  validated with the same blocklist `safe_http` uses on redirects
+  (metadata/private/loopback) **before any request** — a tampered bundle can't make
+  the first hop hit `169.254.169.254`. Redirect/guard errors are reported as
+  `BLOCKED`, distinct from `UNREACHABLE`, so a bug that now 302s internal isn't
+  masked as fixed.
 - **`PUT`/`DELETE`/`PATCH` are skipped unless you pass `--confirm-unsafe`** —
   replaying a mutating request could re-trigger the action.
 - Redacted bundles reference secrets via env vars; replay reads them from the
