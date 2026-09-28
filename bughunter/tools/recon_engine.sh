@@ -30,6 +30,10 @@ BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=tools/_auth_helper.sh
 . "$(dirname "$0")/_auth_helper.sh"
 
+# OS-specific install hints for missing tools (dep_install_hint / warn_missing).
+# shellcheck source=tools/_dep_hint.sh
+. "$(dirname "$0")/_dep_hint.sh"
+
 # Domain-list mode: if the target is a readable regular file, treat its
 # contents as a pre-resolved scope list (one host per line, # comments OK).
 # Useful for programs without wildcards where subdomain enum is wasted work.
@@ -39,6 +43,46 @@ if [ -f "$TARGET" ] && [ -r "$TARGET" ]; then
     LIST_FILE="$TARGET"
     TARGET="$(basename "$LIST_FILE")"
     TARGET="${TARGET%.*}"
+fi
+
+# ── Normalize a URL/host/host:port into a bare host (+ optional port) ─────────
+# Scanners need `9am.io`, not `https://9am.io/`; without this the pipeline ran
+# `nmap https://9am.io/` (0 hosts) and wrote output to `recon/https:/9am.io`.
+# Mirrors tools/target_normalize.py (cross-checked in tests). Sets globals
+# TARGET (bare host, lowercased) and TARGET_PORT (empty when none). Skipped for
+# file-list targets, whose TARGET is already a basename.
+TARGET_PORT=""
+_normalize_target() {
+    local s="$1"
+    # trim whitespace
+    s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
+    # strip scheme://
+    shopt -s nocasematch
+    [[ "$s" =~ ^[a-z][a-z0-9+.-]*:// ]] && s="${s#*://}"
+    shopt -u nocasematch
+    # drop path/query/fragment
+    s="${s%%[/?#]*}"
+    # userinfo user:pass@host -> host
+    s="${s##*@}"
+    local host="$s" port=""
+    if [[ "$s" == \[*\]* ]]; then                 # [IPv6] or [IPv6]:port
+        host="${s#\[}"; host="${host%%\]*}"
+        local rest="${s##*\]}"
+        [[ "$rest" =~ ^:([0-9]+)$ ]] && port="${BASH_REMATCH[1]}"
+    elif [[ "$s" == *:*:* ]]; then                 # bare IPv6, leave intact
+        host="$s"
+    elif [[ "$s" =~ ^(.+):([0-9]+)$ ]]; then       # host:port
+        host="${BASH_REMATCH[1]}"; port="${BASH_REMATCH[2]}"
+    fi
+    while [[ "$host" == *. ]]; do host="${host%.}"; done   # all trailing dots (match Python rstrip('.'))
+    host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+    TARGET="$host"; TARGET_PORT="$port"
+}
+# Normalize hostnames/URLs only. A CIDR must keep its /NN mask (normalization
+# would strip it as a path) and a file-list target is already a basename.
+if [ "${TARGET_TYPE:-}" != "list" ] && [ "${TARGET_TYPE:-}" != "cidr" ] \
+   && ! [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
+    _normalize_target "$TARGET"
 fi
 
 RECON_DIR="${RECON_OUT_DIR:-$BASE_DIR/recon/$TARGET}"
@@ -69,9 +113,18 @@ if ! command -v timeout &>/dev/null; then
 fi
 
 # ── Detect target type (passed from hunt.py or auto-detected here) ────────────
+# "local" = loopback / RFC-1918 private / *.local — no public subdomain recon.
 _detect_target_type() {
     local t="$1"
-    if [[ "$t" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then echo "cidr"
+    # CIDR first so 10.0.0.0/24 is a range, not a single "local" host.
+    if   [[ "$t" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then echo "cidr"
+    elif [[ "$t" == "localhost" || "$t" == "ip6-localhost" || "$t" == "::1" ]]; then echo "local"
+    elif [[ "$t" == *.localhost || "$t" == *.local ]];         then echo "local"
+    elif [[ "$t" =~ ^127\. ]];                                 then echo "local"
+    elif [[ "$t" =~ ^10\. ]];                                  then echo "local"
+    elif [[ "$t" =~ ^192\.168\. ]];                            then echo "local"
+    elif [[ "$t" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]];          then echo "local"
+    elif [[ "$t" =~ ^169\.254\. ]];                            then echo "local"
     elif [[ "$t" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]];        then echo "ip"
     else echo "domain"; fi
 }
@@ -92,8 +145,25 @@ PY
 }
 TARGET_TYPE="${TARGET_TYPE:-$(_detect_target_type "$TARGET")}"
 
-# For IP/CIDR: always scope-lock — no subdomain enum needed
-if [ "$TARGET_TYPE" = "ip" ] || [ "$TARGET_TYPE" = "cidr" ]; then
+# Refuse a target that normalized away or carries path-traversal characters, so
+# $RECON_DIR can never point outside recon/ (belt-and-suspenders with the
+# Python-side safe_target_dirname check). A CIDR legitimately contains '/'.
+if [ "$TARGET_TYPE" != "list" ] && [ "$TARGET_TYPE" != "cidr" ]; then
+    if [ -z "$TARGET" ] || [ "$TARGET" = "." ] || [[ "$TARGET" == */* ]] || [[ "$TARGET" == *..* ]]; then
+        echo "[-] Refusing unsafe/empty target '$1' after normalization" >&2
+        exit 2
+    fi
+fi
+
+# Debug/test hook: print the parsed target and exit before doing any scanning.
+#   recon_engine.sh <target> --normalize-only
+if [ "$QUICK_MODE" = "--normalize-only" ] || [ "${BB_NORMALIZE_ONLY:-0}" = "1" ]; then
+    printf 'host=%s\nport=%s\ntype=%s\n' "$TARGET" "$TARGET_PORT" "$TARGET_TYPE"
+    exit 0
+fi
+
+# For IP/CIDR/local: always scope-lock — no subdomain enum needed
+if [ "$TARGET_TYPE" = "ip" ] || [ "$TARGET_TYPE" = "cidr" ] || [ "$TARGET_TYPE" = "local" ]; then
     SCOPE_LOCK=1
 fi
 
@@ -126,7 +196,7 @@ _resolve_pd_httpx() {
 HTTPX_BIN="$(_resolve_pd_httpx || true)"
 if ! "$HTTPX_BIN" -version 2>&1 | grep -qi "projectdiscovery"; then
     echo "[!] WARNING: ProjectDiscovery httpx not found on PATH. Live-host probing will fail." >&2
-    echo "    Install with:  GOBIN=\"\$HOME/go/bin\" go install github.com/projectdiscovery/httpx/cmd/httpx@latest" >&2
+    dep_install_hint httpx >&2
 fi
 export HTTPX_BIN
 
@@ -227,9 +297,15 @@ elif [ "$TARGET_TYPE" = "cidr" ]; then
         _expand_cidr_hosts "$TARGET" > "$RECON_DIR/subdomains/all.txt"
     fi
     # Skip all subdomain enum tools — jump straight to live host probing
-elif [ "${SCOPE_LOCK:-0}" = "1" ] && [ "$TARGET_TYPE" = "ip" ]; then
-    log_info "Single IP target — skipping subdomain enumeration"
-    echo "$TARGET" > "$RECON_DIR/subdomains/all.txt"
+elif [ "$TARGET_TYPE" = "ip" ] || [ "$TARGET_TYPE" = "local" ]; then
+    if [ "$TARGET_TYPE" = "local" ]; then
+        log_info "Local/private target — skipping subdomain enum, crt.sh and wayback (no public data)"
+    else
+        log_info "Single IP target — skipping subdomain enumeration"
+    fi
+    # Seed the live-probe list with the exact host[:port] so httpx hits the
+    # app's port (e.g. localhost:3000) instead of only 80/443.
+    echo "${TARGET}${TARGET_PORT:+:$TARGET_PORT}" > "$RECON_DIR/subdomains/all.txt"
 else
 
 # Subfinder (passive, fast)
@@ -238,7 +314,7 @@ if command -v subfinder &>/dev/null; then
     subfinder -d "$TARGET" -silent -all -t 50 -o "$RECON_DIR/subdomains/subfinder.txt" 2>/dev/null || true
     log_done "subfinder: $(wc -l < "$RECON_DIR/subdomains/subfinder.txt" 2>/dev/null || echo 0) subdomains"
 else
-    log_warn "subfinder not installed — skipping"
+    warn_missing subfinder "subdomain enumeration"
 fi
 
 # Amass (passive)
@@ -324,7 +400,11 @@ if [ -x "$HTTPX_BIN" ] && [ -s "$RECON_DIR/subdomains/all.txt" ]; then
     log_done "403 Forbidden: $(wc -l < "$RECON_DIR/live/status_403.txt" 2>/dev/null || echo 0)"
     log_done "401 Auth Required: $(wc -l < "$RECON_DIR/live/status_401.txt" 2>/dev/null || echo 0)"
 else
-    log_warn "httpx not installed or no subdomains found — skipping"
+    if ! [ -x "$HTTPX_BIN" ]; then
+        warn_missing httpx "HTTP probing"
+    else
+        log_warn "No hosts to probe (empty subdomains/all.txt) — skipping HTTP probing"
+    fi
 fi
 
 # ============================================================
@@ -346,7 +426,7 @@ if command -v nmap &>/dev/null; then
         | sort -u > "$RECON_DIR/ports/open_ports.txt" 2>/dev/null || true
     log_done "Open ports: $(wc -l < "$RECON_DIR/ports/open_ports.txt" 2>/dev/null || echo 0)"
 else
-    log_warn "nmap not installed — skipping"
+    warn_missing nmap "port scan"
 fi
 
 # ============================================================
@@ -356,13 +436,17 @@ echo ""
 log_info "Phase 4: URL Collection"
 
 # GAU - Get All URLs (wayback, commoncrawl, otx, urlscan)
-if command -v gau &>/dev/null; then
+# Local/private hosts have no public archive — skip straight to active crawling.
+if [ "$TARGET_TYPE" = "local" ]; then
+    log_info "Local target — skipping gau/wayback (no historical data); relying on katana crawl"
+elif command -v gau &>/dev/null; then
     log_step "Running gau (historical URLs)..."
     echo "$TARGET" | gau --threads 20 --o "$RECON_DIR/urls/gau.txt" 2>/dev/null || \
     echo "$TARGET" | gau > "$RECON_DIR/urls/gau.txt" 2>/dev/null || true
     log_done "gau: $(wc -l < "$RECON_DIR/urls/gau.txt" 2>/dev/null || echo 0) URLs"
 else
-    log_warn "gau not installed — using wayback fallback"
+    log_warn "gau not installed — using wayback fallback. To install gau:"
+    dep_install_hint gau
     curl -s "https://web.archive.org/cdx/search/cdx?url=*.$TARGET/*&output=text&fl=original&collapse=urlkey&limit=5000" \
         > "$RECON_DIR/urls/wayback.txt" 2>/dev/null || true
     log_done "wayback: $(wc -l < "$RECON_DIR/urls/wayback.txt" 2>/dev/null || echo 0) URLs"
@@ -491,7 +575,11 @@ if command -v ffuf &>/dev/null && [ -s "$RECON_DIR/live/urls.txt" ]; then
         log_warn "No wordlist found — run: python3 tools/hunt.py --setup-wordlists"
     fi
 else
-    log_warn "ffuf not installed or no live hosts — skipping directory fuzzing"
+    if ! command -v ffuf &>/dev/null; then
+        warn_missing ffuf "directory fuzzing"
+    else
+        log_warn "No live hosts — skipping directory fuzzing"
+    fi
 fi
 
 # ============================================================
@@ -579,7 +667,7 @@ CICD_SCANNER="$(dirname "$0")/cicd_scanner.sh"
 # Extract github.com/<org> patterns from recon data
 for f in "$RECON_DIR/live/httpx_full.txt" "$RECON_DIR/js/endpoints.txt" "$RECON_DIR/urls/all.txt"; do
     if [ -f "$f" ]; then
-        GITHUB_ORGS="$GITHUB_ORGS $(grep -oP 'github\.com/\K[a-zA-Z0-9_-]+' "$f" 2>/dev/null || true)"
+        GITHUB_ORGS="$GITHUB_ORGS $(grep -oE 'github\.com/[a-zA-Z0-9_-]+' "$f" 2>/dev/null | sed 's#.*github\.com/##' || true)"
     fi
 done
 
@@ -643,7 +731,7 @@ if command -v nuclei &>/dev/null && [ -s "$RECON_DIR/live/urls.txt" ]; then
         log_done "nuclei: no findings"
     fi
 else
-    [ -z "$(command -v nuclei)" ] && log_warn "nuclei not installed — see ./tools/external_arsenal.sh --install-hint nuclei"
+    [ -z "$(command -v nuclei)" ] && warn_missing nuclei "template scan"
 fi
 
 # ============================================================
@@ -711,7 +799,7 @@ echo "  JS endpoints:      $(wc -l < "$RECON_DIR/js/endpoints.txt" 2>/dev/null |
 echo "  Unique params:     $(wc -l < "$RECON_DIR/params/unique_params.txt" 2>/dev/null || echo 0)"
 
 [ -d "$RECON_DIR/cicd" ] && \
-echo "  CI/CD findings:   $(find "$RECON_DIR/cicd" -name 'scan_results.txt' -exec grep -cP '\.github/workflows/' {} + 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')"
+echo "  CI/CD findings:   $(find "$RECON_DIR/cicd" -name 'scan_results.txt' -exec grep -cF '.github/workflows/' {} + 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')"
 
 [ -f "$RECON_DIR/nuclei/findings.jsonl" ] && \
 echo "  Nuclei hits:       $(wc -l < "$RECON_DIR/nuclei/findings.jsonl" | tr -d ' ')"

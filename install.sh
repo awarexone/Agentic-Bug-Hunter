@@ -7,6 +7,32 @@ AGENT="${BBHUNT_AGENT:-claude}"
 SCOPE="global"
 SETUP_BURP="ask"
 
+# Every source path below is repo-relative, so anchor to the script's own
+# directory. Without this, running `~/tools/Agentic-Bug-Hunter/install.sh`
+# from an unrelated cwd silently copies nothing.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# The repo layout is mixed: skills/commands/rules/scripts/hooks live at the
+# root, but agents/ and mcp/ live under bughunter/. Resolve each one to
+# whichever location actually exists so a layout change breaks loudly in one
+# place instead of silently skipping files everywhere.
+resolve_src() {
+    local fallback="$1" candidate
+    shift
+    for candidate in "$@"; do
+        if [ -e "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    echo "$fallback"
+    return 1
+}
+
+AGENTS_SRC="$(resolve_src "agents" "agents" "bughunter/agents")" || true
+MCP_SRC="$(resolve_src "mcp" "mcp" "bughunter/mcp")" || true
+
 usage() {
     cat <<'EOF'
 Usage: ./install.sh [--agent claude|opencode|pi|codex|agents|standalone|mcp|all] [--global|--project]
@@ -78,7 +104,7 @@ copy_tree_items() {
     local src_glob="$1"
     local dest_dir="$2"
     local label="$3"
-    local item name
+    local item name copied=0
 
     mkdir -p "$dest_dir"
     for item in $src_glob; do
@@ -88,14 +114,22 @@ copy_tree_items() {
         mkdir -p "$dest_dir/$name"
         cp -R "$item"/. "$dest_dir/$name/"
         echo "✓ Installed $label: $name"
+        copied=$((copied + 1))
     done
+    # An unmatched glob is passed through by bash as a literal string, so the
+    # loop above just skips it. Report that instead of exiting 0 as if the
+    # install worked — a silently empty install is how agents/ went missing.
+    if [ "$copied" -eq 0 ]; then
+        echo "[!] No $label found for glob '$src_glob' (cwd: $PWD)" >&2
+        return 1
+    fi
 }
 
 copy_files() {
     local src_glob="$1"
     local dest_dir="$2"
     local label="$3"
-    local item name
+    local item name copied=0
 
     mkdir -p "$dest_dir"
     for item in $src_glob; do
@@ -103,7 +137,12 @@ copy_files() {
         name=$(basename "$item")
         cp "$item" "$dest_dir/$name"
         echo "✓ Installed $label: $name"
+        copied=$((copied + 1))
     done
+    if [ "$copied" -eq 0 ]; then
+        echo "[!] No $label found for glob '$src_glob' (cwd: $PWD)" >&2
+        return 1
+    fi
 }
 
 install_claude() {
@@ -117,7 +156,7 @@ install_claude() {
     echo "Installing Claude Bug Bounty for Claude Code ($SCOPE)..."
     copy_tree_items "skills/*" "$root/skills" "skill"
     copy_files "commands/*.md" "$root/commands" "command"
-    copy_files "agents/*.md" "$root/agents" "agent"
+    copy_files "$AGENTS_SRC/*.md" "$root/agents" "agent"
     echo "Done: $root"
 
     if [ "$SETUP_BURP" = "ask" ]; then
@@ -127,7 +166,7 @@ install_claude() {
         echo "─────────────────────────────────────────────"
         echo ""
         echo "Connect to PortSwigger's Burp MCP server for live HTTP traffic visibility."
-        echo "See mcp/burp-mcp-client/README.md for setup instructions."
+        echo "See $MCP_SRC/burp-mcp-client/README.md for setup instructions."
         echo ""
         read -r -p "Set up Burp MCP now? (y/N): " setup_burp
         case "$setup_burp" in
@@ -143,7 +182,7 @@ install_claude() {
         echo "  claude config edit"
         echo ""
         echo "Then add to the mcpServers section:"
-        grep -A 10 '"burp"' mcp/burp-mcp-client/config.json || true
+        grep -A 10 '"burp"' "$MCP_SRC/burp-mcp-client/config.json" || true
         echo ""
         echo "And set your Burp API key:"
         echo "  export BURP_API_KEY=\"your-api-key-here\""
@@ -169,7 +208,7 @@ install_opencode() {
     echo "Installing Claude Bug Bounty for OpenCode ($SCOPE)..."
     copy_tree_items "skills/*" "$root/skills" "skill"
     copy_files "commands/*.md" "$root/commands" "command"
-    copy_files "agents/*.md" "$root/agents" "agent"
+    copy_files "$AGENTS_SRC/*.md" "$root/agents" "agent"
     echo "Done: $root"
     echo ""
     echo "OpenCode also reads AGENTS.md from the project root. Keep this repo's AGENTS.md committed for portable project instructions."
@@ -347,7 +386,7 @@ install_mcp() {
     echo "════════════════════════════════════════════════════"
     echo ""
     echo "Server entry:"
-    echo "  python3 bughunter/mcp/bughunter-mcp/server.py"
+    echo "  python3 $MCP_SRC/bughunter-mcp/server.py"
     echo "  # or: bughunter mcp serve   (after standalone install)"
     echo ""
     echo "Doctor / tool catalog:"
@@ -355,17 +394,17 @@ install_mcp() {
     echo "  bughunter mcp tools"
     echo ""
     echo "Python SDK:"
-    echo "  pip install 'mcp>=1.28'"
+    echo "  pip install 'mcp>=2.2.0'"
     echo ""
-    echo "Claude Code — merge bughunter/mcp/bughunter-mcp/claude-config.json into ~/.claude/settings.json mcpServers"
-    echo "OpenCode   — merge bughunter/mcp/bughunter-mcp/opencode-config.json into opencode mcp config"
+    echo "Claude Code — merge $MCP_SRC/bughunter-mcp/claude-config.json into ~/.claude/settings.json mcpServers"
+    echo "OpenCode   — merge $MCP_SRC/bughunter-mcp/opencode-config.json into opencode mcp config"
     echo ""
     echo "Active tools require scope_domains + approve=true (or BBHUNT_MCP_APPROVE=1)."
     echo "Existing Burp / Caido / HackerOne integrations are unchanged."
     echo ""
     if [ "${BBHUNT_SKIP_DEPS:-0}" != "1" ] && command -v pip3 &>/dev/null; then
         echo "Installing mcp SDK (optional)..."
-        pip3 install --quiet 'mcp>=1.28' 2>/dev/null || echo "[!] pip install mcp failed — install manually"
+        pip3 install --quiet 'mcp>=2.2.0' 2>/dev/null || echo "[!] pip install mcp failed — install manually"
     fi
     echo "Done."
 }

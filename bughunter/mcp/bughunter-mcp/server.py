@@ -28,7 +28,7 @@ try:
     from mcp.types import ToolAnnotations
 except ImportError as exc:  # pragma: no cover
     print(
-        "ERROR: Python package 'mcp' is required. Install with: pip install 'mcp>=1.28'\n"
+        "ERROR: Python package 'mcp' is required. Install with: pip install 'mcp>=2.2.0'\n"
         f"Detail: {exc}",
         file=sys.stderr,
     )

@@ -112,7 +112,7 @@ echo ""
 
 # Generate summary
 # Finding lines contain path:line:col: pattern
-TOTAL=$(grep -cP '\.github/workflows/[^:]+:\d+:\d+:' "$SCAN_RESULTS" 2>/dev/null | tail -1 || echo "0")
+TOTAL=$(grep -cE '\.github/workflows/[^:]+:[0-9]+:[0-9]+:' "$SCAN_RESULTS" 2>/dev/null | tail -1 || echo "0")
 TOTAL="${TOTAL##*:}"  # strip filename prefix if grep adds one
 [ -z "$TOTAL" ] && TOTAL=0
 {
@@ -127,11 +127,11 @@ TOTAL="${TOTAL##*:}"  # strip filename prefix if grep adds one
 
     if [ "$TOTAL" -gt 0 ]; then
         echo "--- By Rule ---"
-        grep -oP '\[[-a-z0-9]+\]\s*$' "$SCAN_RESULTS" 2>/dev/null | tr -d '[]' | \
+        grep -oE '\[[-a-z0-9]+\][[:space:]]*$' "$SCAN_RESULTS" 2>/dev/null | tr -d '[]' | \
             sort | uniq -c | sort -rn || true
         echo ""
         echo "--- Affected Files ---"
-        grep -oP '[^/]+/\.github/workflows/[^:]+' "$SCAN_RESULTS" 2>/dev/null | \
+        grep -oE '[^/]+/\.github/workflows/[^:]+' "$SCAN_RESULTS" 2>/dev/null | \
             sed 's|^[^/]*/||' | sort -u || true
     else
         echo "No findings detected."
