@@ -214,8 +214,9 @@ bughunter v "finding"        # short alias for validate
 | **Fluxion** | Subscription / pay-as-you-go | Cloud | Fast | [fluxionai.world](https://fluxionai.world/register?source=github&campaign=github-awarexone&promo=AWAREXONE) → get API key · [docs](https://docs.fluxionai.world/user-guide/help-center) · [Model Plaza](https://fluxionai.world/model-plaza) |
 | **LiteLLM** | Uses your existing provider keys | Cloud / self-hosted proxy | Fast | [docs.litellm.ai](https://docs.litellm.ai) → one gateway for 100+ models |
 | **Requesty** | Pay-as-you-go | Cloud | Fast | [app.requesty.ai/api-keys](https://app.requesty.ai/api-keys) → get API key · [docs](https://docs.requesty.ai) |
+| **Cheaper Inference** | Pay-as-you-go | Cloud | Fast | [cheaperinference.com/signup](https://cheaperinference.com/signup) → get API key |
 
-BugHunter auto-detects providers in this order: **Ollama → Groq → DeepSeek → … → OrcaRouter → OpenRouter → Fluxion → Claude → OpenAI**. LiteLLM is opt-in (selected explicitly or when `LITELLM_API_KEY` is set) so it never preempts a provider you already configured. Requesty is opt-in the same way (selected explicitly or when `REQUESTY_API_KEY` is set); set `REQUESTY_BASE_URL=https://router.eu.requesty.ai/v1` to route through the EU region.
+BugHunter auto-detects providers in this order: **Ollama → Groq → DeepSeek → … → OrcaRouter → OpenRouter → Fluxion → Claude → OpenAI**. LiteLLM is opt-in (selected explicitly or when `LITELLM_API_KEY` is set) so it never preempts a provider you already configured. Requesty is opt-in the same way (selected explicitly or when `REQUESTY_API_KEY` is set); set `REQUESTY_BASE_URL=https://router.eu.requesty.ai/v1` to route through the EU region. Cheaper Inference is opt-in too (selected explicitly or when `CHEAPER_INFERENCE_API_KEY` is set).
 
 Switch providers or choose an installed Ollama model anytime: `bughunter setup`.
 The setup can also be fully non-interactive:

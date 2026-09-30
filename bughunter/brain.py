@@ -5,13 +5,13 @@ from __future__ import annotations
 Brain — Multi-Provider LLM Reasoning Layer for Bug Bounty & VAPT
 Supports: Ollama (local), Claude, OpenAI, Grok, Groq, DeepSeek,
           Gemini, Kimi (Moonshot), Mistral, Together AI, Cerebras, Perplexity,
-          OpenRouter, OrcaRouter, Fluxion, Requesty
+          OpenRouter, OrcaRouter, Fluxion, Requesty, Cheaper Inference
 
 Provider selection (in order of precedence):
   1. BRAIN_PROVIDER env var  (ollama | claude | openai | grok | groq | deepseek |
                                gemini | kimi | mistral | together | cerebras |
                                perplexity | openrouter | orcarouter | fluxion |
-                               requesty)
+                               requesty | cheaperinference)
   2. Auto-detect: uses first provider whose API key / server is available
 
 Model selection:
@@ -38,6 +38,7 @@ API keys (env vars):
   REQUESTY_API_KEY    - Requesty (multi-model gateway, anthropic/claude-sonnet-4-6, etc.)
   REQUESTY_BASE_URL   - Requesty base URL (default: https://router.requesty.ai/v1,
                         EU: https://router.eu.requesty.ai/v1)
+  CHEAPER_INFERENCE_API_KEY - Cheaper Inference (multi-model gateway, gpt-5.4-mini, etc.)
   OLLAMA_HOST         — Ollama base URL (default: http://localhost:11434)
 
 Default model priority (uses first available):
@@ -209,6 +210,7 @@ class LLMClient:
         "orcarouter":  "openai/gpt-4o",
         "fluxion":     "openai/gpt-4o",
         "requesty":    "anthropic/claude-sonnet-4-6",
+        "cheaperinference": "gpt-5.4-mini",
         "litellm":     "gpt-4o",
         "ollama":      None,  # resolved dynamically
     }
@@ -278,6 +280,7 @@ class LLMClient:
         "orcarouter":  "ORCAROUTER_API_KEY",
         "fluxion":     "FLUXION_API_KEY",
         "requesty":    "REQUESTY_API_KEY",
+        "cheaperinference": "CHEAPER_INFERENCE_API_KEY",
         # Kept last so auto-detect only reaches LiteLLM when LITELLM_API_KEY is
         # set, and never preempts a directly-configured provider above.
         "litellm":     "LITELLM_API_KEY",
@@ -526,6 +529,20 @@ class LLMClient:
             self.available   = True
             self.description = "Requesty (multi-model gateway)"
 
+        elif provider == "cheaperinference":
+            key = os.environ.get("CHEAPER_INFERENCE_API_KEY", "")
+            if not key:
+                return
+            import requests
+            self._http = requests.Session()
+            self._http.headers.update({
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            })
+            self._api_base   = "https://api.cheaperinference.com/v1"
+            self.available   = True
+            self.description = "Cheaper Inference (multi-model gateway)"
+
         elif provider == "litellm":
             # LiteLLM routes by the model-name prefix (e.g. "anthropic/claude-...",
             # "gemini/gemini-...", "bedrock/...") and reads each target provider's
@@ -558,6 +575,7 @@ class LLMClient:
                 "openai", "grok", "groq", "deepseek",
                 "gemini", "kimi", "mistral", "together", "cerebras", "perplexity",
                 "openrouter", "orcarouter", "fluxion", "requesty",
+                "cheaperinference",
             ):
                 return self._chat_openai_compat(model, system, user, max_tokens, temperature)
         except Exception as e:
@@ -752,6 +770,16 @@ class LLMClient:
                 "gpt-5.4-mini",
                 "gemini-3.5-flash",
                 "gpt-4o-mini@eu",
+            ]
+        elif self.provider == "cheaperinference":
+            # Curated starter set; full catalog: GET https://api.cheaperinference.com/v1/models
+            return [
+                "gpt-5.4-mini",
+                "gpt-5.4",
+                "claude-sonnet-5",
+                "gemini-3.1-pro",
+                "deepseek-v4-flash",
+                "glm-5.3",
             ]
         elif self.provider == "litellm":
             return self._litellm_list_models()
