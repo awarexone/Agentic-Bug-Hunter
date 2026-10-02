@@ -40,6 +40,15 @@ tools/llm_redteam.py --list-categories
 | `data-exfil` | markdown-image beacon to attacker host | LLM02/LLM06 |
 | `indirect-injection` | payload framed as a retrieved document | LLM01 (indirect) |
 | `guardrail-bypass` | base64 / split-instruction filter evasion | LLM01 |
+| `multi-turn-crescendo` | single-shot simulation of gradual escalation | LLM01 |
+| `cross-lingual` | instruction override in another language | LLM01 |
+| `cipher-obfuscation` | leetspeak / ROT13-wrapped instruction | LLM01 |
+| `token-smuggling` | invisible Sneaky-Bits unicode injection | LLM01 |
+| `excessive-agency` | coerce an unsafe tool call / exfil | LLM06/LLM08 |
+| `insecure-output` | emit raw HTML/script for downstream XSS | LLM02 |
+
+For attacking a deployed agent (tools/memory/multi-agent) rather than a chat box,
+see `/llm-app-audit` and `skills/agentic-app-audit`.
 
 ## How detection works
 

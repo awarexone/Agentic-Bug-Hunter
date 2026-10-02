@@ -18,6 +18,55 @@ def _sys_path() -> None:
         sys.path.insert(0, root)
 
 
+def _build_checker(domains: list[str] | None, excluded: list[str] | None = None):
+    """Build the ONE authoritative ScopeChecker (same class the agent path uses),
+    or None if no domains / a dangerous config. Never a second implementation."""
+    if not domains:
+        return None
+    _sys_path()
+    from tools.scope_checker import ScopeChecker, ScopeError
+
+    try:
+        return ScopeChecker(domains=domains, excluded_domains=excluded)
+    except ScopeError as exc:
+        import sys as _sys
+        print(f"WARNING: rejected unsafe scope configuration: {exc}", file=_sys.stderr)
+        return None
+
+
+# Recon-output files that later scanners read. Mirrors
+# agent.ToolDispatcher._filter_recon_urls_to_scope so the MCP path filters
+# discovered (possibly out-of-scope) hosts before any active scan reads them.
+_RECON_URL_FILES = (
+    ("urls", "all.txt"),
+    ("urls", "with_params.txt"),
+    ("urls", "js_files.txt"),
+    ("urls", "api_endpoints.txt"),
+    ("urls", "graphql.txt"),
+    ("live", "urls.txt"),
+)
+
+
+def _filter_recon_to_scope(target: str, checker) -> dict[str, int]:
+    """Drop out-of-scope URLs from recon files in place. Returns per-file counts.
+    No-op when checker is None (caller decides fail-closed behavior separately)."""
+    dropped: dict[str, int] = {}
+    if checker is None:
+        return dropped
+    recon_dir = REPO / "recon" / target
+    for parts in _RECON_URL_FILES:
+        f = recon_dir.joinpath(*parts)
+        if not f.is_file():
+            continue
+        try:
+            _kept, out = checker.filter_file(str(f))
+            if out:
+                dropped["/".join(parts)] = out
+        except OSError:
+            continue
+    return dropped
+
+
 def scope_check(target: str, domains: list[str], excluded: list[str] | None = None) -> dict[str, Any]:
     _sys_path()
     from tools.scope_checker import ScopeChecker
@@ -34,8 +83,12 @@ def scope_check(target: str, domains: list[str], excluded: list[str] | None = No
     }
 
 
-def run_recon(target: str, *, timeout: int = 600) -> dict[str, Any]:
-    """Invoke tools/recon_engine.sh (existing recon)."""
+def run_recon(target: str, *, timeout: int = 600, scope_checker=None) -> dict[str, Any]:
+    """Invoke tools/recon_engine.sh (existing recon).
+
+    If a scope_checker is supplied, recon-discovered URL files are filtered to
+    scope in place before any downstream scanner reads them.
+    """
     script = REPO / "tools" / "recon_engine.sh"
     if not script.exists():
         return {"status": "failed", "error": "RESEARCH_FAILED", "reason": "recon_engine.sh missing"}
@@ -63,6 +116,11 @@ def run_recon(target: str, *, timeout: int = 600) -> dict[str, Any]:
         "stderr_tail": (proc.stderr or "")[-1000:],
         "next_action": "review_attack_surface",
     }
+    # Scope-filter discovered URLs in place before anything reads them.
+    if recon_dir.is_dir() and scope_checker is not None:
+        dropped = _filter_recon_to_scope(target, scope_checker)
+        if dropped:
+            summary["scope_filtered_out_of_scope"] = dropped
     # ingest leads if recon produced output
     if recon_dir.is_dir():
         try:
@@ -121,16 +179,41 @@ def attack_surface(target: str) -> dict[str, Any]:
     }
 
 
-def run_hunt(target: str, *, quick: bool = False, timeout: int = 900) -> dict[str, Any]:
+def run_hunt(target: str, *, quick: bool = False, timeout: int = 900, scope_checker=None) -> dict[str, Any]:
     _sys_path()
+    # Hard block: never launch active testing against an out-of-scope base
+    # target, and filter recon-discovered hosts to scope before the scanner
+    # (vuln_scanner.sh) reads them. Uses the one authoritative ScopeChecker.
+    if scope_checker is not None:
+        if not scope_checker.is_in_scope(target):
+            return {
+                "status": "denied",
+                "error": "OUT_OF_SCOPE",
+                "target": target,
+                "reason": f"{target} is out of scope — refusing to hunt",
+                "next_action": "Choose an in-scope target",
+            }
+        _filter_recon_to_scope(target, scope_checker)
     try:
         from tools import hunt as hunt_mod
     except Exception:
         hunt_mod = None
     if hunt_mod and hasattr(hunt_mod, "hunt_target"):
         try:
-            # Many hunt_target signatures take target string
-            result = hunt_mod.hunt_target(target) if not quick else hunt_mod.hunt_target(target)
+            # hunt_target re-runs recon (which can repopulate URL files with
+            # out-of-scope hosts) and then the vuln scanner. Install the SAME
+            # ScopeChecker process-wide for the duration so hunt.py's own gate
+            # (block out-of-scope target, filter recon files before scanning)
+            # applies inside hunt_target too. Restore afterward to avoid leaking
+            # scope across MCP calls.
+            _prev = getattr(hunt_mod, "_SCOPE_CHECKER", None)
+            if scope_checker is not None and hasattr(hunt_mod, "set_scope_checker"):
+                hunt_mod.set_scope_checker(scope_checker)
+            try:
+                result = hunt_mod.hunt_target(target)
+            finally:
+                if scope_checker is not None and hasattr(hunt_mod, "set_scope_checker"):
+                    hunt_mod.set_scope_checker(_prev)
             return {
                 "status": "completed",
                 "target": target,
@@ -376,6 +459,7 @@ def research(
 ) -> dict[str, Any]:
     """High-level workflow stages — does not auto-run everything."""
     mode = (mode or "RECON").upper()
+    checker = _build_checker(domains)
     stages: list[dict[str, Any]] = []
     out: dict[str, Any] = {
         "status": "completed",
@@ -389,10 +473,10 @@ def research(
         "next_action": "continue",
     }
     if mode in {"RECON", "FULL"}:
-        stages.append(run_recon(target))
+        stages.append(run_recon(target, scope_checker=checker))
         out["research"]["stage"] = "recon"
     if mode in {"HUNT", "FULL"}:
-        stages.append(run_hunt(target))
+        stages.append(run_hunt(target, scope_checker=checker))
         out["research"]["stage"] = "hunt"
         out["findings"] = list_findings(target).get("findings", [])
     if mode == "VALIDATE":

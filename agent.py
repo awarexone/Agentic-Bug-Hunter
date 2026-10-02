@@ -107,8 +107,10 @@ except Exception as _brain_err:
 # ── Scope enforcement for autonomous tool dispatch ──────────────────────────────
 # _here is the repo root (inserted onto sys.path above), so tools.* / memory.*
 # import as regular packages here.
-from tools.scope_checker import ScopeChecker, _split_patterns  # noqa: E402
+from tools.scope_checker import ScopeChecker, ScopeError, _split_patterns  # noqa: E402
 from memory.audit_log import AutopilotGuard  # noqa: E402
+from memory.redaction import redact_obj as _redact_obj  # noqa: E402
+from memory.evidence import EvidenceStore, new_finding_id  # noqa: E402
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 GREEN   = "\033[0;32m"
@@ -436,6 +438,10 @@ class HuntMemory:
         self.session_file    = session_file
         self.working_memory  = ""
         self.findings_log:   list[dict] = []
+        # candidate_leads = unverified scanner hits. They are NOT findings until
+        # a deterministic verifier confirms them (XBOW-style discovery/validation
+        # split). Discovery writes here; only the verifier promotes to findings.
+        self.candidate_leads: list[dict] = []
         self.observation_buf: list[dict] = []   # {tool, ts, text}
         self.completed_steps: list[str]  = []
         self.step_count      = 0
@@ -447,6 +453,7 @@ class HuntMemory:
                 data = json.loads(Path(self.session_file).read_text())
                 self.working_memory   = data.get("working_memory", "")
                 self.findings_log     = data.get("findings_log", [])
+                self.candidate_leads  = data.get("candidate_leads", [])
                 self.observation_buf  = data.get("observation_buf", [])[-10:]
                 self.completed_steps  = data.get("completed_steps", [])
                 self.step_count       = data.get("step_count", 0)
@@ -458,12 +465,15 @@ class HuntMemory:
         data = {
             "working_memory":  self.working_memory,
             "findings_log":    self.findings_log[-MAX_FINDINGS_LOG:],
+            "candidate_leads": self.candidate_leads[-MAX_FINDINGS_LOG:],
             "observation_buf": self.observation_buf[-10:],
             "completed_steps": self.completed_steps,
             "step_count":      self.step_count,
             "saved_at":        datetime.now().isoformat(),
         }
-        Path(self.session_file).write_text(json.dumps(data, indent=2))
+        # Redact before the session file hits disk. In-memory state is left
+        # intact so the running agent can still use what it observed.
+        Path(self.session_file).write_text(json.dumps(_redact_obj(data), indent=2))
 
     def add_observation(self, tool: str, text: str) -> None:
         """Record a tool output to the sliding observation window."""
@@ -476,13 +486,73 @@ class HuntMemory:
         if len(self.observation_buf) > 15:
             self.observation_buf = self.observation_buf[-10:]
 
-    def add_finding(self, tool: str, severity: str, text: str) -> None:
+    def add_finding(self, tool: str, severity: str, text: str, *,
+                    parent_evidence_id: str | None = None,
+                    evidence_store: EvidenceStore | None = None,
+                    session_id: str | None = None) -> str:
+        """Record a finding with a stable id and, when a store is present,
+        link it to the captured action evidence. Returns the finding id."""
+        finding_id = new_finding_id()
         self.findings_log.append({
+            "finding_id": finding_id,
+            "parent_evidence_id": parent_evidence_id,
             "tool":     tool,
             "severity": severity,
             "text":     text[:500],
             "ts":       datetime.now().isoformat(),
         })
+        if evidence_store is not None:
+            evidence_store.capture(
+                kind="finding",
+                tool=tool,
+                status=severity,
+                observation=text[:500],
+                finding_id=finding_id,
+                parent_id=parent_evidence_id,
+                session_id=session_id,
+            )
+            if parent_evidence_id:
+                evidence_store.link_finding(
+                    parent_evidence_id, finding_id, session_id=session_id,
+                )
+        return finding_id
+
+    def add_candidate(self, tool: str, severity_hint: str, text: str, *,
+                      skill: str = "", parent_evidence_id: str | None = None,
+                      evidence_store: EvidenceStore | None = None,
+                      session_id: str | None = None) -> str:
+        """Record an UNVERIFIED scanner hit as a candidate lead.
+
+        This is the discovery side of the discovery/validation split: a keyword
+        match in tool output is only a lead, never a confirmed finding. Evidence
+        is captured as kind='candidate' (not 'finding') so provenance is kept
+        without pretending the bug is real. A deterministic verifier must later
+        promote it via add_finding.
+        """
+        cand_id = new_finding_id()
+        self.candidate_leads.append({
+            "candidate_id": cand_id,
+            "parent_evidence_id": parent_evidence_id,
+            "tool":          tool,
+            "severity_hint": severity_hint,
+            "skill":         skill,
+            "text":          text[:500],
+            "status":        "candidate",
+            "ts":            datetime.now().isoformat(),
+        })
+        if evidence_store is not None:
+            try:
+                evidence_store.capture(
+                    kind="candidate",
+                    tool=tool,
+                    status=severity_hint,
+                    observation=text[:500],
+                    parent_id=parent_evidence_id,
+                    session_id=session_id,
+                )
+            except Exception:  # noqa: BLE001 - evidence must never break discovery
+                pass
+        return cand_id
 
     def findings_summary(self) -> str:
         """Compact summary of all findings for LLM context."""
@@ -554,9 +624,14 @@ class ToolDispatcher:
                  default_cookies: str = "", scope_checker: ScopeChecker | None = None,
                  circuit_threshold: int = 5,
                  time_budget_hours: float = 2.0,
-                 start_time: float | None = None):
+                 start_time: float | None = None,
+                 evidence_store: EvidenceStore | None = None,
+                 session_id: str | None = None):
         self.domain          = domain
         self.memory           = memory
+        self._evidence       = evidence_store
+        self.session_id      = session_id
+        self.last_evidence_id: str | None = None
         self.scope_lock       = scope_lock
         self.max_urls         = max_urls
         self.default_cookies  = default_cookies
@@ -575,11 +650,63 @@ class ToolDispatcher:
         self._time_budget_hours = time_budget_hours
         self._start_time        = start_time if start_time is not None else time.time()
 
+    def _scope_snapshot(self, url: str, gate: dict | None) -> dict:
+        """Scope context as it exists now. Copied, so later config changes
+        cannot rewrite this record."""
+        snap: dict = {}
+        if gate:
+            snap["decision"] = gate.get("decision")
+            snap["reason"] = gate.get("reason")
+            if gate.get("scope_rule") is not None:
+                snap["scope_rule"] = gate.get("scope_rule")
+        checker = self._guard._scope_checker
+        if checker is not None:
+            explained = checker.explain(url)
+            snap["in_scope"] = explained.get("in_scope")
+            snap["matched_rule"] = explained.get("matched_rule")
+            snap["host"] = explained.get("host")
+            snap["kind"] = explained.get("kind")
+            snap["explain_reason"] = explained.get("reason")
+            snap["rules"] = list(getattr(checker, "domains", []) or [])
+            snap["excluded"] = list(getattr(checker, "excluded_domains", []) or [])
+        elif "decision" not in snap:
+            snap["decision"] = "block"
+            snap["reason"] = "no scope configured"
+        return snap
+
+    def _record(self, *, kind: str, tool: str, status: str,
+                url: str | None = None, method: str | None = None,
+                scope: dict | None = None, observation: str | None = None,
+                timing: dict | None = None, extra: dict | None = None) -> str | None:
+        """Capture observed evidence. No-op when the desktop path did not
+        attach a store (unit tests, local tools)."""
+        if self._evidence is None:
+            self.last_evidence_id = None
+            return None
+        rec = self._evidence.capture(
+            kind=kind,
+            tool=tool,
+            target=self.domain,
+            url=url,
+            method=method,
+            scope=scope,
+            timing=timing,
+            status=status,
+            observation=observation,
+            agent="desktop-mvp",
+            session_id=self.session_id,
+            step=self.memory.step_count,
+            extra=extra,
+        )
+        self.last_evidence_id = rec["evidence_id"]
+        return rec["evidence_id"]
+
     def dispatch(self, name: str, args: dict) -> str:
         """Execute named tool and return text observation."""
         h = _h()
         domain = self.domain
         t0 = time.time()
+        self.last_evidence_id = None
 
         # Time-budget gate: `time_budget_hours` is otherwise only checked
         # between ReActAgent steps (see ReActAgent.step()), so a single
@@ -594,9 +721,12 @@ class ToolDispatcher:
         if name in self.NETWORK_TOOLS:
             remaining_fraction = self._time_remaining_fraction()
             if remaining_fraction < 0.10:
-                return (f"BLOCKED: time budget nearly exhausted "
-                        f"({remaining_fraction*100:.0f}% remaining) — "
-                        f"refusing to start a new long-running tool this late in the budget.")
+                msg = (f"BLOCKED: time budget nearly exhausted "
+                       f"({remaining_fraction*100:.0f}% remaining) — "
+                       f"refusing to start a new long-running tool this late in the budget.")
+                self._record(kind="action", tool=name, status="time_budget_blocked",
+                             observation=msg)
+                return msg
 
         # Scope gate: checked ahead of everything except the time-budget
         # gate above, for any tool that actually sends traffic. `method`
@@ -616,32 +746,61 @@ class ToolDispatcher:
         if name == "run_sqlmap_on_file":
             req_file = args.get("request_file", "")
             if not req_file or not os.path.isfile(req_file):
-                return f"ERROR: request_file not found: {req_file}"
+                msg = f"ERROR: request_file not found: {req_file}"
+                self._record(kind="action", tool=name, status="error", observation=msg,
+                             extra={"request_file": req_file})
+                return msg
             sqlmap_file_host = self._parse_request_file_host(req_file)
             if self._guard._scope_checker is not None:
                 if sqlmap_file_host is None:
-                    return ("BLOCKED by scope guard: could not determine target "
-                             f"host from request_file ({req_file}) — refusing "
-                             "rather than assuming in-scope")
-                if not self._guard._scope_checker.is_in_scope(f"https://{sqlmap_file_host}"):
-                    return (f"BLOCKED by scope guard: Out of scope: "
-                             f"{sqlmap_file_host} is not on the program "
-                             f"allowlist (target host parsed from request_file "
-                             f"{req_file})")
+                    msg = ("BLOCKED by scope guard: could not determine target "
+                           f"host from request_file ({req_file}) — refusing "
+                           "rather than assuming in-scope")
+                    self._record(kind="scope_decision", tool=name, status="blocked",
+                                 observation=msg, extra={"request_file": req_file})
+                    return msg
+                file_url = f"https://{sqlmap_file_host}"
+                if not self._guard._scope_checker.is_in_scope(file_url):
+                    msg = (f"BLOCKED by scope guard: Out of scope: "
+                           f"{sqlmap_file_host} is not on the program "
+                           f"allowlist (target host parsed from request_file "
+                           f"{req_file})")
+                    self._record(
+                        kind="scope_decision", tool=name, status="blocked",
+                        url=file_url, method="POST",
+                        scope=self._scope_snapshot(file_url, {"decision": "block", "reason": msg}),
+                        observation=msg, extra={"request_file": req_file},
+                    )
+                    return msg
 
         if name in self.NETWORK_TOOLS:
             method = self.TOOL_METHODS.get(name, "GET")
-            gate = self._guard.check_request(method, f"https://{domain}")
+            gate_url = f"https://{sqlmap_file_host}" if sqlmap_file_host else f"https://{domain}"
+            gate = self._guard.check_request(method, gate_url)
             if gate["decision"] == "block":
-                return f"BLOCKED by scope guard: {gate['reason']}"
+                msg = f"BLOCKED by scope guard: {gate['reason']}"
+                self._record(
+                    kind="scope_decision", tool=name, status="blocked",
+                    url=gate_url, method=method,
+                    scope=self._scope_snapshot(gate_url, gate),
+                    observation=msg,
+                )
+                return msg
             if gate["decision"] == "require_approval":
                 if sqlmap_file_host is not None:
                     target_desc = f"targets {sqlmap_file_host} via request_file"
                 else:
                     target_desc = f"issues a state-changing request ({method})"
-                return (f"REQUIRES APPROVAL: {name} {target_desc} — a human "
-                         f"must review and run this manually before it "
-                         f"proceeds. Not executed.")
+                msg = (f"REQUIRES APPROVAL: {name} {target_desc} — a human "
+                       f"must review and run this manually before it "
+                       f"proceeds. Not executed.")
+                self._record(
+                    kind="scope_decision", tool=name, status="require_approval",
+                    url=gate_url, method=method,
+                    scope=self._scope_snapshot(gate_url, gate),
+                    observation=msg,
+                )
+                return msg
             # Scope check above only validated the base --target domain;
             # recon may have discovered subdomains/URLs outside that scope.
             # Filter recon output in place before any scanner reads it.
@@ -704,7 +863,10 @@ class ToolDispatcher:
             elif name == "run_sqlmap_on_file":
                 req_file = args.get("request_file", "")
                 if not req_file or not os.path.isfile(req_file):
-                    return f"ERROR: request_file not found: {req_file}"
+                    msg = f"ERROR: request_file not found: {req_file}"
+                    self._record(kind="action", tool=name, status="error", observation=msg,
+                                 extra={"request_file": req_file})
+                    return msg
                 ok = h.run_sqlmap_request_file(
                     req_file, domain=domain,
                     level=int(args.get("level", 5)),
@@ -738,13 +900,31 @@ class ToolDispatcher:
             if name in self.NETWORK_TOOLS:
                 self._guard.record_failure(domain)
             tb = traceback.format_exc()
-            return f"Tool {name} raised exception: {exc}\n{tb[:500]}"
+            msg = f"Tool {name} raised exception: {exc}\n{tb[:500]}"
+            if name in self.NETWORK_TOOLS:
+                self._record(
+                    kind="action", tool=name, status="error",
+                    url=gate_url, method=method,
+                    scope=self._scope_snapshot(gate_url, gate) if gate_url else None,
+                    observation=msg,
+                    timing={"elapsed_s": round(time.time() - t0, 1)},
+                )
+            return msg
 
         if name in self.NETWORK_TOOLS:
             self._guard.record_success(domain)
 
         elapsed = round(time.time() - t0, 1)
         obs_full = f"{obs}\n\n[{name} completed in {elapsed}s]"
+
+        if name in self.NETWORK_TOOLS:
+            self._record(
+                kind="action", tool=name, status="ok",
+                url=gate_url, method=method,
+                scope=self._scope_snapshot(gate_url, gate) if gate_url else None,
+                observation=obs_full[:3000],
+                timing={"elapsed_s": elapsed},
+            )
 
         # Update memory
         self.memory.add_observation(name, obs_full)
@@ -980,26 +1160,68 @@ class ToolDispatcher:
             combined = combined[:MAX_CTX_CHARS] + "\n...[truncated]"
         return combined
 
-    def _classify_obs(self, tool: str, obs: str) -> None:
-        """Extract severity labels from observation text and add to findings_log."""
-        obs_l = obs.lower()
-        if any(kw in obs_l for kw in ("rce_confirmed", "injectable", "critical")):
-            sev = "CRITICAL"
-        elif any(kw in obs_l for kw in ("high", "sql injection", "rce", "default cred")):
-            sev = "HIGH"
-        elif any(kw in obs_l for kw in ("medium", "exposed", "open redirect", "cors")):
-            sev = "MEDIUM"
-        elif any(kw in obs_l for kw in ("low", "info")):
-            sev = "LOW"
-        else:
-            return  # not a finding, skip
+    # Keyword -> (severity hint, candidate verifier skill). A scanner keyword is
+    # only ever a CANDIDATE: discovery never confirms its own bug. A deterministic
+    # verifier must promote a candidate to a finding.
+    _CANDIDATE_SKILL = [
+        ("rce_confirmed", "CRITICAL", "hunt-rce"),
+        ("injectable", "HIGH", "hunt-sqli"),
+        ("sql injection", "HIGH", "hunt-sqli"),
+        ("rce", "HIGH", "hunt-rce"),
+        ("default cred", "HIGH", "hunt-auth-bypass"),
+        ("open redirect", "MEDIUM", "hunt-open-redirect"),
+        ("cors", "MEDIUM", "hunt-cors"),
+        ("exposed", "MEDIUM", "hunt-source-leak"),
+        ("ssrf", "HIGH", "hunt-ssrf"),
+        ("idor", "HIGH", "hunt-idor"),
+        ("xss", "MEDIUM", "hunt-xss"),
+    ]
 
-        # Take first relevant line as summary
+    def _classify_obs(self, tool: str, obs: str) -> None:
+        """Route severity-keyword hits in tool output to CANDIDATE leads.
+
+        This used to promote substring matches straight to CRITICAL/HIGH
+        findings — the main false-positive source. Now a match becomes an
+        unverified candidate lead (and is pushed to the lead board) so nothing
+        is 'a finding' until a deterministic verifier confirms it.
+        """
+        obs_l = obs.lower()
+        matched = next(((sev, skill) for kw, sev, skill in self._CANDIDATE_SKILL
+                        if kw in obs_l), None)
+        if not matched:
+            if any(kw in obs_l for kw in ("medium", "high", "critical")):
+                matched = ("LOW", "hunt-misc")  # weak signal -> low-priority candidate
+            else:
+                return  # not even a candidate
+
+        sev_hint, skill = matched
+        summary = ""
         for ln in obs.splitlines():
             if any(kw in ln.lower() for kw in
-                   ("critical", "high", "injectable", "rce", "exposed", "found", "medium", "sql")):
-                self.memory.add_finding(tool, sev, ln.strip()[:300])
+                   ("critical", "high", "injectable", "rce", "exposed", "found",
+                    "medium", "sql", "ssrf", "idor", "xss", "cors", "redirect")):
+                summary = ln.strip()[:300]
                 break
+        if not summary:
+            return
+
+        self.memory.add_candidate(
+            tool, sev_hint, summary, skill=skill,
+            parent_evidence_id=self.last_evidence_id,
+            evidence_store=self._evidence,
+            session_id=self.session_id,
+        )
+        # Push to the lead board so the candidate is never forgotten and the
+        # verifier/swarm can pick it up. Best-effort — never break the agent.
+        try:
+            import importlib
+            lb = importlib.import_module("tools.lead_board")
+            prio = {"CRITICAL": "high", "HIGH": "high",
+                    "MEDIUM": "med", "LOW": "low"}.get(sev_hint, "low")
+            lb.add(self.domain, skill, summary[:200],
+                   f"{tool} candidate", prio)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1065,24 +1287,32 @@ class AgentTracer:
 
     def _write(self, event: dict) -> None:
         event.setdefault("ts", datetime.now().isoformat())
-        self._f.write(json.dumps(event) + "\n")
+        # Redact BEFORE the line is written to disk — the trace is a durable
+        # sink. Uses the one centralized redactor (key-aware + content-aware),
+        # so result previews, finding text, and bump messages are all scrubbed.
+        self._f.write(json.dumps(_redact_obj(event)) + "\n")
         self._f.flush()
 
     @classmethod
     def redact_args(cls, args: dict) -> dict:
-        """Return a copy of args with sensitive values replaced by 'REDACTED'."""
-        return {
-            k: ("REDACTED" if k.lower() in cls._REDACT_KEYS else v)
-            for k, v in args.items()
-        }
+        """Return a copy of args with sensitive values redacted.
+
+        Delegates to the centralized redactor so there is a single rule set;
+        `_REDACT_KEYS` is retained only for backward-compatible reference.
+        """
+        return _redact_obj(dict(args))
 
     def tool_call(self, tool: str, args: dict, step: int = 0) -> None:
         safe_args = self.redact_args(args)
         self._write({"event": "tool_call", "step": step, "tool": tool, "args": safe_args})
 
-    def tool_result(self, tool: str, result: str, elapsed: float, step: int) -> None:
-        self._write({"event": "tool_result", "step": step, "tool": tool,
-                     "elapsed_s": elapsed, "result_preview": result[:400]})
+    def tool_result(self, tool: str, result: str, elapsed: float, step: int,
+                    evidence_id: str | None = None) -> None:
+        event = {"event": "tool_result", "step": step, "tool": tool,
+                 "elapsed_s": elapsed, "result_preview": result[:400]}
+        if evidence_id:
+            event["evidence_id"] = evidence_id
+        self._write(event)
 
     def loop_warn(self, tool: str, count: int, step: int) -> None:
         self._write({"event": "loop_warn", "step": step, "tool": tool, "count": count})
@@ -1419,7 +1649,10 @@ class ReActAgent:
                 elapsed = round(time.time() - t0, 1)
 
                 if self.tracer:
-                    self.tracer.tool_result(name, obs, elapsed, self.memory.step_count)
+                    self.tracer.tool_result(
+                        name, obs, elapsed, self.memory.step_count,
+                        evidence_id=self.dispatcher.last_evidence_id,
+                    )
 
                 results.append(obs)
 
@@ -1442,7 +1675,19 @@ class ReActAgent:
             if parsed:
                 name, args = parsed
                 print(f"{MAGENTA}[Agent] Parsed from text: {name}{NC}", flush=True)
+                if self.tracer:
+                    self.tracer.tool_call(name, args, self.memory.step_count)
+                t0  = time.time()
                 obs = self.dispatcher.dispatch(name, args)
+                # Trace the result on the text-fallback path too, so a scope
+                # BLOCK here is auditable in agent_trace.jsonl exactly like the
+                # tool-calling path (not just persisted in session observations).
+                if self.tracer:
+                    self.tracer.tool_result(
+                        name, obs, round(time.time() - t0, 1),
+                        self.memory.step_count,
+                        evidence_id=self.dispatcher.last_evidence_id,
+                    )
                 if name == "finish":
                     self.done    = True
                     self.verdict = args.get("verdict", "")
@@ -1499,7 +1744,7 @@ class ReActAgent:
             obs = self.step()
             if obs:
                 # Print first 500 chars of observation
-                preview = obs[:500] + ("..." if len(obs) > 500 else "")
+                preview = _redact_obj(obs[:500]) + ("..." if len(obs) > 500 else "")
                 print(f"{DIM}[Observation]\n{preview}{NC}\n", flush=True)
 
         if not self.done:
@@ -1688,6 +1933,7 @@ def run_agent_hunt(
     # — both mark "now" at hunt start, a few instructions apart.
     hunt_start_time = time.time()
     memory     = HuntMemory(session_file)
+    evidence   = EvidenceStore(session_dir)
     dispatcher = ToolDispatcher(
         domain, memory,
         scope_lock=scope_lock,
@@ -1696,61 +1942,76 @@ def run_agent_hunt(
         scope_checker=scope_checker,
         time_budget_hours=time_budget_hours,
         start_time=hunt_start_time,
+        evidence_store=evidence,
+        session_id=session_id,
     )
 
-    # ── Run ───────────────────────────────────────────────────────────────
-    if use_langgraph and _LANGGRAPH_OK:
-        print(f"{GREEN}[Agent] Using real LangGraph backend.{NC}", flush=True)
-        picked_model = model or (_pick_model() if _BRAIN_OK else None) or "qwen2.5:32b"
-        try:
-            graph   = build_langgraph_agent(domain, dispatcher, memory, picked_model, max_steps)
-            initial = {"messages": [HumanMessage(content=f"Hunt {domain}. Begin.")]}
-            result_state = graph.invoke(initial, config={"recursion_limit": max_steps * 2})
-            return {
-                "domain":          domain,
-                "success":         True,
-                "model":           picked_model,
-                "backend":         "langgraph",
-                "steps":           memory.step_count,
-                "completed_steps": list(dict.fromkeys(memory.completed_steps)),
-                "reports":         len(memory.findings_log),
-                "findings":        len(memory.findings_log),
-                "session_file":    session_file,
-                "working_memory":  memory.working_memory,
-                **{step: (step in memory.completed_steps)
-                   for step in ("recon", "scan", "js_analysis", "secret_hunt",
-                                "param_discovery", "api_fuzz", "cors", "cms_exploit",
-                                "rce_scan", "sqlmap", "jwt_audit")},
-            }
-        except Exception as e:
-            print(f"{YELLOW}[Agent] LangGraph error: {e} — falling back to built-in{NC}",
-                  flush=True)
+    # Install the SAME ScopeChecker into the hunt module for the duration of the
+    # run. This is what makes tools/hunt.py run_recon export SCOPE_ENFORCED=1 to
+    # recon_engine.sh (so httpx does NOT follow redirects onto out-of-scope
+    # hosts) and applies hunt.py's own base-target block + recon filtering as
+    # defense-in-depth — all keyed on the one authoritative checker, never a
+    # second implementation. Restored afterward so scope never leaks across runs.
+    _prev_hunt_scope = getattr(h, "_SCOPE_CHECKER", None)
+    if scope_checker is not None and hasattr(h, "set_scope_checker"):
+        h.set_scope_checker(scope_checker)
+    try:
+        # ── Run ─────────────────────────────────────────────────────────────
+        if use_langgraph and _LANGGRAPH_OK:
+            print(f"{GREEN}[Agent] Using real LangGraph backend.{NC}", flush=True)
+            picked_model = model or (_pick_model() if _BRAIN_OK else None) or "qwen2.5:32b"
+            try:
+                graph   = build_langgraph_agent(domain, dispatcher, memory, picked_model, max_steps)
+                initial = {"messages": [HumanMessage(content=f"Hunt {domain}. Begin.")]}
+                result_state = graph.invoke(initial, config={"recursion_limit": max_steps * 2})
+                return {
+                    "domain":          domain,
+                    "success":         True,
+                    "model":           picked_model,
+                    "backend":         "langgraph",
+                    "steps":           memory.step_count,
+                    "completed_steps": list(dict.fromkeys(memory.completed_steps)),
+                    "reports":         len(memory.findings_log),
+                    "findings":        len(memory.findings_log),
+                    "session_file":    session_file,
+                    "working_memory":  memory.working_memory,
+                    **{step: (step in memory.completed_steps)
+                       for step in ("recon", "scan", "js_analysis", "secret_hunt",
+                                    "param_discovery", "api_fuzz", "cors", "cms_exploit",
+                                    "rce_scan", "sqlmap", "jwt_audit")},
+                }
+            except Exception as e:
+                print(f"{YELLOW}[Agent] LangGraph error: {e} — falling back to built-in{NC}",
+                      flush=True)
 
-    # Built-in ReAct loop
-    log_path  = os.path.join(session_dir, "agent_trace.jsonl")
-    bump_path = os.path.join(session_dir, "agent_bump.txt")
-    tracer    = AgentTracer(log_path)
+        # Built-in ReAct loop
+        log_path  = os.path.join(session_dir, "agent_trace.jsonl")
+        bump_path = os.path.join(session_dir, "agent_bump.txt")
+        tracer    = AgentTracer(log_path)
 
-    print(f"{GREEN}[Agent] Trace: tail -f {log_path}{NC}", flush=True)
-    print(f"{GREEN}[Agent] Bump:  echo 'guidance here' > {bump_path}{NC}", flush=True)
+        print(f"{GREEN}[Agent] Trace: tail -f {log_path}{NC}", flush=True)
+        print(f"{GREEN}[Agent] Bump:  echo 'guidance here' > {bump_path}{NC}", flush=True)
 
-    agent = ReActAgent(
-        domain      = domain,
-        memory      = memory,
-        dispatcher  = dispatcher,
-        max_steps   = max_steps,
-        time_budget_hours = time_budget_hours,
-        model       = model,
-        tracer      = tracer,
-    )
-    agent.bump_file = bump_path
+        agent = ReActAgent(
+            domain      = domain,
+            memory      = memory,
+            dispatcher  = dispatcher,
+            max_steps   = max_steps,
+            time_budget_hours = time_budget_hours,
+            model       = model,
+            tracer      = tracer,
+        )
+        agent.bump_file = bump_path
 
-    result = agent.run()
-    tracer.close()
-    result["backend"]    = "builtin-react"
-    result["trace_path"] = log_path
-    result["bump_path"]  = bump_path
-    return result
+        result = agent.run()
+        tracer.close()
+        result["backend"]    = "builtin-react"
+        result["trace_path"] = log_path
+        result["bump_path"]  = bump_path
+        return result
+    finally:
+        if scope_checker is not None and hasattr(h, "set_scope_checker"):
+            h.set_scope_checker(_prev_hunt_scope)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1830,10 +2091,18 @@ Scope (required before any tool that sends traffic will run):
         sys.exit(1)
 
     domains = _split_patterns(args.domain)
-    scope_checker = ScopeChecker(
-        domains=domains,
-        excluded_domains=_split_patterns(args.exclude_domain),
-    ) if domains else None
+    if domains:
+        try:
+            scope_checker = ScopeChecker(
+                domains=domains,
+                excluded_domains=_split_patterns(args.exclude_domain),
+            )
+        except ScopeError as exc:
+            print(f"{RED}[Agent] Invalid scope configuration: {exc}{NC}")
+            print(f"{YELLOW}[Agent] Fix the --domain/--exclude-domain patterns and retry.{NC}")
+            sys.exit(2)
+    else:
+        scope_checker = None
 
     if scope_checker is None:
         print(f"{YELLOW}[Agent] No --domain given — every tool that sends traffic "

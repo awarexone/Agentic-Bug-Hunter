@@ -42,6 +42,24 @@
   Built and maintained by <b>AwareXone</b> · <a href="https://awarexone.com">Website</a> · <a href="https://x.com/awarexone">X</a> · <a href="https://github.com/Awarexone">GitHub</a>
 </p>
 
+<p align="center">
+  <a href="https://www.infistar.cc/register?aff=6KMC28FN&ref_source=link">
+    <img src="assets/infistar.jpg" alt="Sponsored by Infistar.cc — One-Stop Global LLM API Platform" width="100%"/>
+  </a>
+</p>
+
+<p align="center">
+  <b>Sponsored by <a href="https://www.infistar.cc/register?aff=6KMC28FN&ref_source=link">Infistar.cc</a></b>
+  <br/>
+  One API key for your entire AI hunting pipeline.
+  <br/>
+  Agentic Bug Hunter supports 15 LLM providers. Infistar.cc gives you one OpenAI-compatible API for multiple models with unified billing.
+  <br/>
+  One key. Multiple models. Simple billing.
+  <br/>
+  <a href="https://www.infistar.cc/register?aff=6KMC28FN&ref_source=link"><b>Get $5 bonus credit</b></a>
+</p>
+
 ---
 
 ## Trusted By Engineers At
@@ -635,6 +653,15 @@ If BugHunter helps your hunts, you can fuel more of them — every contribution 
   <a href="https://github.com/sponsors/awarexone">
     <img src="https://img.shields.io/badge/Sponsor_AwareXone-ea4aaa?style=for-the-badge&logo=github&logoColor=white" alt="Sponsor awarexone on GitHub"/>
   </a>
+</p>
+
+<p align="center">
+  <a href="https://www.infistar.cc/register?aff=6KMC28FN&ref_source=link">
+    <img src="assets/infistar.jpg" alt="Infistar.cc" width="720"/>
+  </a>
+  <br/>
+  <b>Sponsored by <a href="https://www.infistar.cc/register?aff=6KMC28FN&ref_source=link">Infistar.cc</a></b> — one OpenAI-compatible key for multiple models.
+  <a href="https://www.infistar.cc/register?aff=6KMC28FN&ref_source=link">Get $5 bonus credit</a>.
 </p>
 
 We're open to sponsors. Sponsoring funds new features and keeps the standalone mode free for everyone, and gets your logo and a link right here in the README, plus a credit in every release.

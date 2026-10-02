@@ -16,16 +16,28 @@ api_keys.txt
 # Nested local clones / sub-repos (not tracked)
 Agentic-Bug-Hunter/
 
+# Local control sockets (short paths for AF_UNIX)
+.ctl/
+
+# Relocatable engine assembled by scripts/bundle-engine.sh
+desktop/src-tauri/resources/engine/**
+!desktop/src-tauri/resources/engine/README.md
+
 # Python
 __pycache__/
 *.py[cod]
 .venv/
+.venv-*/
 venv/
 *.egg-info/
 
 # macOS
 .DS_Store
 .AppleDouble
+*.p12
+*.cer
+*.p8
+AuthKey_*.p8
 
 # Logs
 *.log
@@ -36,3 +48,6 @@ venv/
 nmap-output/
 .atlas/
 .forge/
+
+# Runtime lead-board ledgers (per-target, regenerated on each hunt)
+memory/leads/

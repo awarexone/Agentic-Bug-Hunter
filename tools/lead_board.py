@@ -24,6 +24,8 @@ Claude reads `show`, says "I see X -> run skill Y", and `touch`es leads as it wo
 """
 
 import argparse
+import contextlib
+import fcntl
 import glob
 import json
 import os
@@ -163,9 +165,51 @@ def load_ledger(target):
 
 def save_ledger(target, leads):
     os.makedirs(LEADS_DIR, exist_ok=True)
-    with open(ledger_path(target), "w") as fh:
+    # Atomic replace so a concurrent reader never sees a half-written ledger.
+    path = ledger_path(target)
+    tmp = path + f".tmp.{os.getpid()}"
+    with open(tmp, "w") as fh:
         for ld in leads:
             fh.write(json.dumps(ld, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+
+
+@contextlib.contextmanager
+def ledger_lock(target):
+    """Exclusive cross-process lock for a target's ledger.
+
+    Swarm workers run in parallel and all write the same JSONL; every
+    read-modify-write (ingest / add / touch) must hold this lock so updates are
+    serialized and no worker clobbers another's lead.
+    """
+    os.makedirs(LEADS_DIR, exist_ok=True)
+    lock_path = ledger_path(target) + ".lock"
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def adjudicate(lead):
+    """Cheap sanity gate before a lead becomes shared truth.
+
+    A hallucinating worker shouldn't be able to poison the global board. We
+    require a routed skill, a non-trivial evidence string, and a known priority.
+    Returns (ok, reason).
+    """
+    if not isinstance(lead, dict):
+        return False, "not a dict"
+    if not lead.get("skill") or not str(lead["skill"]).startswith("hunt-"):
+        return False, "missing/invalid hunt-* skill"
+    ev = norm_evidence(lead.get("evidence", ""))
+    if len(ev) < 3:
+        return False, "evidence too short"
+    if lead.get("priority") not in (P_HIGH, P_MED, P_LOW):
+        return False, "invalid priority"
+    return True, ""
 
 
 def norm_evidence(e):
@@ -229,50 +273,56 @@ def route_observation(text, source):
 
 
 def ingest(target, recon_dir):
-    leads = load_ledger(target)
-    index = {dedup_key(l["skill"], l["evidence"]): l for l in leads}
-    rec = gather_recon(recon_dir)
-    added = updated = 0
+    with ledger_lock(target):
+        leads = load_ledger(target)
+        index = {dedup_key(l["skill"], l["evidence"]): l for l in leads}
+        rec = gather_recon(recon_dir)
+        added = updated = rejected = 0
 
-    def upsert(skill, prio, label, why, evidence, source):
-        nonlocal added, updated
-        if not skill:
-            return
-        key = dedup_key(skill, evidence)
-        if key in index:
-            ld = index[key]
-            ld["last_seen"] = now_iso()
-            ld["seen_count"] = ld.get("seen_count", 1) + 1
-            updated += 1
-            return
-        ld = {
-            "id": "lb-" + secrets.token_hex(3),
-            "target": target, "skill": skill, "priority": prio,
-            "signal": label, "why": why, "evidence": norm_evidence(evidence),
-            "source": source, "status": "new", "note": "",
-            "created": now_iso(), "last_seen": now_iso(), "seen_count": 1,
-        }
-        leads.append(ld)
-        index[key] = ld
-        added += 1
+        def upsert(skill, prio, label, why, evidence, source):
+            nonlocal added, updated, rejected
+            if not skill:
+                return
+            key = dedup_key(skill, evidence)
+            if key in index:
+                ld = index[key]
+                ld["last_seen"] = now_iso()
+                ld["seen_count"] = ld.get("seen_count", 1) + 1
+                updated += 1
+                return
+            ld = {
+                "id": "lb-" + secrets.token_hex(3),
+                "target": target, "skill": skill, "priority": prio,
+                "signal": label, "why": why, "evidence": norm_evidence(evidence),
+                "source": source, "status": "new", "note": "",
+                "created": now_iso(), "last_seen": now_iso(), "seen_count": 1,
+            }
+            ok, _reason = adjudicate(ld)
+            if not ok:
+                rejected += 1
+                return
+            leads.append(ld)
+            index[key] = ld
+            added += 1
 
-    for u in rec["urls"]:
-        for skill, prio, label, why in route_observation(u, "url"):
-            upsert(skill, prio, label, why, u, "url")
-    for line in rec["hostlines"]:
-        for skill, prio, label, why in route_observation(line, "tech"):
-            host = (re.search(r"https?://[^\s\]]+", line) or [None])
-            ev = host.group(0) if hasattr(host, "group") else line[:120]
-            upsert(skill, prio, label, why, ev, "tech")
-    for n in rec["nuclei"]:
-        for skill, prio, label, why in route_observation(n, "nuclei"):
-            upsert(skill, prio, label, why, n[:200], "nuclei")
-    for a in rec["ai"]:
-        upsert("hunt-llm-ai", P_HIGH, "confirmed AI endpoint",
-               "ai_surface confirmed -> run ai_gauntlet.sh", a, "ai")
+        for u in rec["urls"]:
+            for skill, prio, label, why in route_observation(u, "url"):
+                upsert(skill, prio, label, why, u, "url")
+        for line in rec["hostlines"]:
+            for skill, prio, label, why in route_observation(line, "tech"):
+                host = (re.search(r"https?://[^\s\]]+", line) or [None])
+                ev = host.group(0) if hasattr(host, "group") else line[:120]
+                upsert(skill, prio, label, why, ev, "tech")
+        for n in rec["nuclei"]:
+            for skill, prio, label, why in route_observation(n, "nuclei"):
+                upsert(skill, prio, label, why, n[:200], "nuclei")
+        for a in rec["ai"]:
+            upsert("hunt-llm-ai", P_HIGH, "confirmed AI endpoint",
+                   "ai_surface confirmed -> run ai_gauntlet.sh", a, "ai")
 
-    save_ledger(target, leads)
-    print(f"[+] ingest {target}: +{added} new leads, {updated} re-seen "
+        save_ledger(target, leads)
+    rej = f", {rejected} rejected by adjudication" if rejected else ""
+    print(f"[+] ingest {target}: +{added} new leads, {updated} re-seen{rej} "
           f"(total {len(leads)}). Ledger: {ledger_path(target)}")
     if added:
         print(f"[*] run:  lead_board.py show {target}    to see what to hunt next")
@@ -354,38 +404,44 @@ def show_next(target):
 
 
 def touch(target, lead_id, status, note, finding_id=None):
-    leads = load_ledger(target)
-    hit = None
-    for l in leads:
-        if l["id"] == lead_id:
-            if status:
-                l["status"] = status
-            if note is not None:
-                l["note"] = note
-            if finding_id:
-                l["finding_id"] = finding_id
-            l["updated"] = now_iso()
-            hit = l
-    if not hit:
-        print(f"[!] lead {lead_id} not found for {target}")
-        return
-    save_ledger(target, leads)
+    with ledger_lock(target):
+        leads = load_ledger(target)
+        hit = None
+        for l in leads:
+            if l["id"] == lead_id:
+                if status:
+                    l["status"] = status
+                if note is not None:
+                    l["note"] = note
+                if finding_id:
+                    l["finding_id"] = finding_id
+                l["updated"] = now_iso()
+                hit = l
+        if not hit:
+            print(f"[!] lead {lead_id} not found for {target}")
+            return
+        save_ledger(target, leads)
     print(f"[+] {lead_id} -> {hit['status']}" + (f"  ({hit['note']})" if hit.get("note") else ""))
 
 
 def add(target, skill, evidence, signal, priority, finding_id=None):
-    leads = load_ledger(target)
-    if any(dedup_key(l["skill"], l["evidence"]) == dedup_key(skill, evidence) for l in leads):
-        print("[!] lead already exists (same skill+evidence)")
-        return
-    ld = {"id": "lb-" + secrets.token_hex(3), "target": target, "skill": skill,
-          "priority": priority, "signal": signal or "manual", "why": "manually added",
-          "evidence": norm_evidence(evidence), "source": "manual", "status": "new",
-          "note": "", "created": now_iso(), "last_seen": now_iso(), "seen_count": 1}
-    if finding_id:
-        ld["finding_id"] = finding_id
-    leads.append(ld)
-    save_ledger(target, leads)
+    with ledger_lock(target):
+        leads = load_ledger(target)
+        if any(dedup_key(l["skill"], l["evidence"]) == dedup_key(skill, evidence) for l in leads):
+            print("[!] lead already exists (same skill+evidence)")
+            return
+        ld = {"id": "lb-" + secrets.token_hex(3), "target": target, "skill": skill,
+              "priority": priority, "signal": signal or "manual", "why": "manually added",
+              "evidence": norm_evidence(evidence), "source": "manual", "status": "new",
+              "note": "", "created": now_iso(), "last_seen": now_iso(), "seen_count": 1}
+        ok, reason = adjudicate(ld)
+        if not ok:
+            print(f"[!] lead rejected by adjudication: {reason}")
+            return
+        if finding_id:
+            ld["finding_id"] = finding_id
+        leads.append(ld)
+        save_ledger(target, leads)
     print(f"[+] added {ld['id']}  {skill}  {evidence}")
 
 

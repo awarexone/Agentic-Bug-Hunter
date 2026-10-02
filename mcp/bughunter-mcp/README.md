@@ -8,22 +8,41 @@ This does **not** replace:
 - `caido-mcp-client/`
 - `hackerone-mcp/`
 
-## Run
+## Install (any MCP client)
 
 ```bash
-pip install 'mcp>=1.28'
-python3 mcp/bughunter-mcp/server.py
-# or
-./install.sh --agent standalone
-bughunter mcp serve
-bughunter mcp doctor
-bughunter mcp tools
+pip install agentic-bug-hunter
+```
+
+That installs the `bughunter` command. The MCP server runs as `bughunter mcp serve`,
+so the same config works from any directory in any MCP-compatible agent.
+
+```bash
+bughunter mcp doctor   # verify SDK, tools, and paths
+bughunter mcp tools    # list the exposed tool catalog
 ```
 
 ## Clients
 
-- Claude Code: merge `claude-config.json` into `mcpServers`
-- OpenCode: see `opencode-config.json`
+Add this to your client's MCP config (works after `pip install`, no repo checkout needed):
+
+```json
+{
+  "mcpServers": {
+    "bughunter": {
+      "command": "bughunter",
+      "args": ["mcp", "serve"],
+      "env": { "BBHUNT_MCP_APPROVE": "0" }
+    }
+  }
+}
+```
+
+- **Claude Desktop / Claude Code**: merge `claude-config.json` into `mcpServers`
+- **Cursor / Cline / Windsurf / Zed**: same `command` + `args` in their MCP settings
+- **OpenCode**: see `opencode-config.json`
+
+Running from a cloned repo instead of pip? Use `python3 mcp/bughunter-mcp/server.py`.
 
 ## Safety
 

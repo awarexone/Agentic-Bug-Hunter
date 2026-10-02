@@ -64,10 +64,16 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None  # never auto-follow; safe_urlopen drives redirects itself
 
 
-def safe_urlopen(req: urllib.request.Request, timeout: float = 10, max_redirects: int = 5, **kwargs):
+def safe_urlopen(req: urllib.request.Request, timeout: float = 10, max_redirects: int = 5,
+                 scope_checker=None, **kwargs):
     """Like urllib.request.urlopen(req), but validates every redirect hop's
     hostname before following it, rejecting private/loopback/link-local/
     metadata addresses.
+
+    If a scope_checker is supplied, each redirect hop's URL must also be in
+    program scope — a target that 302s to an out-of-scope (but public) host
+    would otherwise cause out-of-scope traffic. When scope_checker is None
+    (the default) behavior is unchanged: SSRF guard only.
 
     Extra keyword arguments are forwarded to the underlying opener on
     every hop, so callers that pass a custom SSL context to urlopen()
@@ -88,6 +94,10 @@ def safe_urlopen(req: urllib.request.Request, timeout: float = 10, max_redirects
         if _is_blocked_redirect_target(hostname):
             raise urllib.error.URLError(
                 f"blocked redirect to disallowed host (SSRF guard): {hostname!r}"
+            )
+        if scope_checker is not None and not scope_checker.is_in_scope(next_url):
+            raise urllib.error.URLError(
+                f"blocked redirect to out-of-scope host (scope guard): {hostname!r}"
             )
         preserve_body = resp.status in (307, 308)
         current = urllib.request.Request(

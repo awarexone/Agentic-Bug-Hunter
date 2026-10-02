@@ -66,14 +66,24 @@ class PolicyEngine:
 
     def set_scope(self, domains: list[str], excluded_domains: list[str] | None = None) -> None:
         _ensure_path()
-        from tools.scope_checker import ScopeChecker
+        from tools.scope_checker import ScopeChecker, ScopeError
 
         self._domains = [d.lower() for d in domains]
-        self._checker = ScopeChecker(
-            domains=self._domains,
-            excluded_domains=excluded_domains or self._excluded,
-            excluded_classes=self._excluded_classes,
-        )
+        try:
+            self._checker = ScopeChecker(
+                domains=self._domains,
+                excluded_domains=excluded_domains or self._excluded,
+                excluded_classes=self._excluded_classes,
+            )
+        except ScopeError as exc:
+            # Dangerous scope config (e.g. a public-suffix wildcard). Leave the
+            # checker unset so promote_asset() fails closed (BLOCK) rather than
+            # widening scope. Surface the reason on stderr.
+            import sys as _sys
+            print(f"WARNING: rejected unsafe scope configuration: {exc}", file=_sys.stderr)
+            self._checker = None
+            self.authorized = set()
+            return
         self.authorized = {d.lstrip("*.").lower() for d in self._domains if d}
 
     def note_discovered(self, host: str) -> None:
@@ -158,11 +168,18 @@ class PolicyEngine:
         try:
             from memory.audit_log import AutopilotGuard
 
-            guard = AutopilotGuard(self._checker, fail_closed=True)
+            # scope_checker is a keyword arg (first positional is circuit_threshold);
+            # check_request returns a dict whose "decision" key holds the verdict.
+            guard = AutopilotGuard(scope_checker=self._checker, fail_closed=True)
             result = guard.check_request(method.upper(), url)
-            if result == "block":
-                return Decision(DecisionKind.BLOCK, "AutopilotGuard blocked request", OUT_OF_SCOPE)
-            if result == "require_approval":
+            decision = result.get("decision")
+            if decision == "block":
+                return Decision(
+                    DecisionKind.BLOCK,
+                    f"AutopilotGuard blocked request: {result.get('reason', '')}",
+                    OUT_OF_SCOPE,
+                )
+            if decision == "require_approval":
                 return Decision(
                     DecisionKind.REQUIRE_APPROVAL,
                     f"Method {method} requires approval",

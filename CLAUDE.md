@@ -23,6 +23,8 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 | `skills/cicd-security/` | CI/CD pipeline hunting — GitHub Actions injection, secret exfil, self-hosted runner poisoning, OIDC abuse, supply chain attacks |
 | `skills/graphql-audit/` | GraphQL hunting — introspection, field suggestions (clairvoyance), batching DoS, IDOR via aliasing, injection, auth bypass, depth bombs |
 | `skills/argus/` | **Argus** (all-seeing scanner suite) — CORS, CRLF/host-header, NoSQL injection, JWT (alg:none/confusion/crack), OOB blind-bug confirmation (interactsh), LLM red-team corpus |
+| `skills/mcp-server-audit/` | MCP server security — tool poisoning, param→sink injection (path/cmd/SSRF/SQL), missing approval gates, result-channel secret leaks, rug-pull/confused-deputy, transport config |
+| `skills/cloud-pentest/` | Post-access cloud exploitation (AWS/GCP/Azure) — IAM enum + privesc, IMDS metadata creds, STS/impersonation, bucket takeover, secrets harvest, proving impact |
 
 ### Commands (33 slash commands)
 

@@ -834,18 +834,20 @@ SQLi that reads a sensitive row (e.g. a config/credentials table) **is already a
 
 When target has AI agents with tool access, these are the 10 attack classes:
 
+Canonical mapping — single source of truth is `skills/llm-redteam/SKILL.md`. Mirrored here:
+
 | ID | Vuln Class | What to Test |
 |----|-----------|-------------|
-| ASI01 | Prompt injection | Override system prompt via user input -- make agent ignore its rules |
-| ASI02 | Tool misuse | Make AI call tools with attacker-controlled params (SSRF via "fetch URL", RCE via code tool) |
-| ASI03 | Data exfil | Extract training data / PII via crafted prompts that leak context |
-| ASI04 | Privilege escalation | Use AI to access admin-only tools -- agent has broader perms than user |
-| ASI05 | Indirect injection | Poison document/URL the AI processes -- hidden instructions in fetched content |
-| ASI06 | Excessive agency | AI takes destructive actions without confirmation -- delete, send, pay |
-| ASI07 | Model DoS | Craft inputs that cause infinite loops, excessive token usage, or OOM |
-| ASI08 | Insecure output | AI generates XSS/SQLi/command injection in its output that gets rendered |
-| ASI09 | Supply chain | Compromised plugins/tools/MCP servers the AI calls |
-| ASI10 | Sensitive disclosure | AI reveals internal configs, API keys, system prompts, user data |
+| ASI01 | Prompt Injection / Goal Hijack | Override objectives via direct or indirect injection |
+| ASI02 | Tool Misuse | Attacker-controlled tool params (SSRF via "fetch URL", RCE via code tool) |
+| ASI03 | Privilege Compromise | Agent uses broader perms / admin tokens than the user |
+| ASI04 | Supply Chain | Compromised plugin / MCP server / tool-output poisoning next agent |
+| ASI05 | Code Execution | Unsafe code-interpreter / sandbox escape |
+| ASI06 | Memory & Context Poisoning | Persistent RAG/memory corruption across sessions/users |
+| ASI07 | Agent Communication | Inter-agent spoofing / IDOR (agent A reads agent B's context) |
+| ASI08 | Excessive Agency | Destructive action without confirmation; cascading failures |
+| ASI09 | Insecure Output Handling | AI output rendered as XSS / SQLi / command injection downstream |
+| ASI10 | Sensitive Information Disclosure | Leaks system prompt / keys / configs / user data |
 
 **Triage rule:** ASI alone = Informational. Must chain to IDOR/exfil/RCE/ATO for paid bounty.
 

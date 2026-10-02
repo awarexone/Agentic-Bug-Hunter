@@ -154,7 +154,7 @@ def bughunter_recon(
     if denied:
         return denied
     POLICY.set_scope(scope_domains or [target])
-    return redact_obj(adapters.run_recon(target))
+    return redact_obj(adapters.run_recon(target, scope_checker=POLICY._checker))
 
 
 @mcp.tool(title="Attack surface", annotations=_ann(read_only=True))
@@ -199,7 +199,7 @@ def bughunter_hunt(
     if denied:
         return denied
     POLICY.set_scope(scope_domains or [target])
-    return redact_obj(adapters.run_hunt(target))
+    return redact_obj(adapters.run_hunt(target, scope_checker=POLICY._checker))
 
 
 @mcp.tool(title="Hunt class", annotations=_ann(open_world=True))
@@ -218,7 +218,7 @@ def bughunter_hunt_class(
     if denied:
         return denied
     POLICY.set_scope(scope_domains or [target])
-    out = adapters.run_hunt(target)
+    out = adapters.run_hunt(target, scope_checker=POLICY._checker)
     out["vuln_class"] = vuln_class
     out["summary"] = f"Hunt with class hint={vuln_class}: " + str(out.get("summary", ""))
     return redact_obj(out)

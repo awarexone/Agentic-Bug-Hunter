@@ -295,13 +295,24 @@ log_info "Phase 2: HTTP Probing"
 
 if [ -x "$HTTPX_BIN" ] && [ -s "$RECON_DIR/subdomains/all.txt" ]; then
     log_step "Probing with httpx (status, title, tech, content-length)..."
+    # Scope safety: when scope enforcement is active (SCOPE_ENFORCED=1, exported
+    # by tools/hunt.py run_recon whenever a ScopeChecker is configured — always
+    # true on the desktop agent path), do NOT follow redirects. An in-scope host
+    # can 302 to an out-of-scope host, and httpx would follow it and put traffic
+    # on the wire toward a host outside the program allowlist. Redirects are
+    # still visible via the status code + Location; we just don't fetch them.
+    HTTPX_REDIRECT_ARGS=(-follow-redirects)
+    if [ "${SCOPE_ENFORCED:-0}" = "1" ]; then
+        HTTPX_REDIRECT_ARGS=()
+        log_info "Scope enforcement on: httpx redirect-following disabled (no off-scope hops)"
+    fi
     "$HTTPX_BIN" -l "$RECON_DIR/subdomains/all.txt" \
         -silent \
         -status-code \
         -title \
         -tech-detect \
         -content-length \
-        -follow-redirects \
+        ${HTTPX_REDIRECT_ARGS[@]+"${HTTPX_REDIRECT_ARGS[@]}"} \
         -threads "$THREADS" \
         -rate-limit "$RATE_LIMIT" \
         ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} \

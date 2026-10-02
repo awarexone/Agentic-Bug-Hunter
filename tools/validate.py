@@ -851,8 +851,41 @@ def write_validation_json(output_dir: str, info: dict, gate_notes: dict) -> str:
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
+def _run_auto(finding_path: str, output_dir: str) -> int:
+    """Non-interactive path: run the programmatic verifier gate on a finding
+    JSON and persist validation.json. This is what the swarm coordinator, the
+    report gate, and CI call — no prompts, deterministic oracle only."""
+    from tools.validate_core import verify_finding_programmatic, is_report_ready
+
+    try:
+        with open(finding_path, "r", encoding="utf-8") as fh:
+            finding = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print(f"{RED}[-] bad finding JSON: {exc}{RESET}", file=sys.stderr)
+        return 3
+
+    out_dir = output_dir or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "findings",
+        "auto-" + datetime.now().strftime("%Y%m%d-%H%M%S"),
+    )
+    result = verify_finding_programmatic(
+        finding, session_dir=out_dir, write_dir=out_dir,
+    )
+    status = result["status"]
+    color = GREEN if status == "validated_finding" else YELLOW
+    print(f"  {BOLD}{color}status: {status}{RESET}  (gate: {result['gate_verdict']})")
+    print(f"  verifier: {result['verifier']['oracle']}")
+    if result["rejection_reasons"]:
+        for r in result["rejection_reasons"]:
+            print(f"    {DIM}- {r}{RESET}")
+    print(f"  validation.json: {os.path.join(out_dir, 'validation.json')}")
+    return 0 if is_report_ready(result) else 1
+
+
 def main():
     parser = argparse.ArgumentParser(description="Interactive bug validation assistant")
+    parser.add_argument("--auto", default="", metavar="FINDING_JSON",
+                        help="Non-interactive: run the deterministic verifier gate on a finding JSON")
     parser.add_argument("--output",  default="", help="Output path for generated report skeleton")
     parser.add_argument("--notes-output", default="", help="Output path for persisted submission notes")
     parser.add_argument("--program", default="", help="HackerOne program handle for dup check")
@@ -868,6 +901,10 @@ def main():
         help="Confidence level from the scanner that produced this finding",
     )
     args = parser.parse_args()
+
+    if args.auto:
+        out_dir = os.path.dirname(os.path.abspath(args.output)) if args.output else ""
+        sys.exit(_run_auto(args.auto, out_dir))
 
     print_banner(
         "Bug Validation Assistant",

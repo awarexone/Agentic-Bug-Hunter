@@ -74,6 +74,20 @@ class TestWriteReportEvidenceDelimited:
         )
         (sqli_dir / "sqlmap_confirmed.txt").write_text(forged)
 
+        # Satisfy the hard report gate so write_report reaches the prompt-building
+        # path this test exercises (gate behavior is covered separately).
+        import json as _json
+
+        (sqli_dir / "validation.json").write_text(
+            _json.dumps(
+                {
+                    "status": "validated_finding",
+                    "verifier": {"confirmed": True, "oracle": "test", "trace": []},
+                    "evidence_links": ["sqlmap_confirmed.txt"],
+                }
+            )
+        )
+
         brain = Brain.__new__(Brain)
         brain.enabled = True
         brain.model = "test-model"

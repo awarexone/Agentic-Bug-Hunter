@@ -1598,12 +1598,67 @@ Do NOT fabricate hypothetical chains using invented endpoints or made-up evidenc
     # ─────────────────────────────────────────────────────────────────────────
     # Phase 4 — Report Writer
     # ─────────────────────────────────────────────────────────────────────────
+    def _report_gate(self, findings_dir: str) -> tuple[bool, str]:
+        """Return (ready, note). A report is allowed only when at least one
+        validation.json under findings_dir is report-ready (deterministically
+        verified + evidence linked). Set BBHUNT_ALLOW_UNVALIDATED_REPORT=1 to
+        bypass when no validations exist yet (legacy flows / manual review)."""
+        import glob as _glob
+        import json as _json
+
+        try:
+            from tools.validate_core import is_report_ready
+        except Exception:  # noqa: BLE001 - if the gate can't load, fail open loudly
+            return True, ""
+
+        val_files = _glob.glob(os.path.join(findings_dir, "**", "validation.json"),
+                               recursive=True)
+        if not val_files:
+            if os.environ.get("BBHUNT_ALLOW_UNVALIDATED_REPORT") == "1":
+                return True, ""
+            return False, (
+                "NO_REPORTS\nReport gate blocked: no validation.json found. Run the "
+                "deterministic verifier first (python3 -m tools.verifiers / "
+                "tools/validate.py --auto <finding.json>). "
+                "Set BBHUNT_ALLOW_UNVALIDATED_REPORT=1 to override."
+            )
+
+        ready, blocked = [], []
+        for vf in val_files:
+            try:
+                v = _json.loads(open(vf, encoding="utf-8").read())
+            except (OSError, ValueError):
+                continue
+            (ready if is_report_ready(v) else blocked).append(
+                (vf, v.get("status"), v.get("rejection_reasons") or []))
+
+        if ready:
+            return True, ""
+        reasons = "; ".join(
+            f"{os.path.basename(os.path.dirname(p))}: {s} ({', '.join(r) or 'unconfirmed'})"
+            for p, s, r in blocked[:5]
+        )
+        return False, (
+            "NO_REPORTS\nReport gate blocked: no finding passed deterministic "
+            f"verification. {reasons}"
+        )
+
     def write_report(self, findings_dir: str, recon_dir: str = "") -> str:
         if not self.enabled:
             return ""
 
         findings_path = Path(findings_dir)
         target        = self._target_from_artifact_dir(findings_dir)
+
+        # HARD GATE — a report may only be written for findings that a
+        # deterministic verifier confirmed (validation.json status ==
+        # validated_finding with a linked verifier trace). Discovery never
+        # confirms its own bug; this is the last checkpoint before a report.
+        ready, gate_note = self._report_gate(findings_dir)
+        if not ready:
+            print(f"{YELLOW}[!] Report gate: {gate_note}{NC}")
+            self._save_analysis(findings_dir, "04_h1_reports.md", gate_note)
+            return gate_note
 
         evidence = self._build_report_evidence(findings_dir, recon_dir)
         if not evidence.strip():

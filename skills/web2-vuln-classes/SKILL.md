@@ -551,18 +551,20 @@ Chatbot renders markdown → browser fires GET with sensitive data
 
 ### Agentic AI Security (OWASP ASI 2026)
 
+Canonical mapping — single source of truth is `skills/llm-redteam/SKILL.md`. Mirrored here:
+
 | Risk | Description | Hunt |
 |---|---|---|
-| ASI01: Goal Hijack | Prompt injection alters agent objectives | Indirect injection via uploaded doc/URL |
+| ASI01: Prompt Injection / Goal Hijack | Direct or indirect injection alters agent objectives | Indirect injection via uploaded doc/URL |
 | ASI02: Tool Misuse | Tools used beyond intended scope | SSRF via "fetch this URL", RCE via code tool |
-| ASI03: Privilege Abuse | Credential escalation across agents | Agent uses admin tokens, no scope enforcement |
+| ASI03: Privilege Compromise | Agent uses broader perms / admin tokens than the user | No scope enforcement across agents |
 | ASI04: Supply Chain | Compromised plugins/MCP servers | Tool output injecting into next agent's context |
 | ASI05: Code Execution | Unsafe code gen/execution | Sandbox escape via code interpreter tool |
-| ASI06: Memory Poisoning | Corrupted RAG/context data | Inject into persistent memory → affects all users |
-| ASI07: Agent Comms | Spoofing between agents | Inter-agent IDOR (agent A reads agent B's context) |
-| ASI08: Cascading Failures | Errors propagate across systems | Error message leaks internal data/credentials |
-| ASI09: Trust Exploitation | AI-generated content trusted uncritically | AI output rendered as HTML (XSS via AI) |
-| ASI10: Rogue Agents | Compromised agents acting maliciously | No kill switch, no rate limiting on tool calls |
+| ASI06: Memory & Context Poisoning | Corrupted RAG/context data | Inject into persistent memory → affects all users |
+| ASI07: Agent Communication | Spoofing between agents | Inter-agent IDOR (agent A reads agent B's context) |
+| ASI08: Excessive Agency | Destructive action without confirmation; cascading failures | Unconfirmed send/pay/delete; errors leak internal data |
+| ASI09: Insecure Output Handling | AI-generated content rendered without escaping | AI output rendered as HTML (XSS via AI) |
+| ASI10: Sensitive Information Disclosure | Leaks system prompt / keys / configs / user data | No kill switch / rate limit; secrets in output |
 
 **Triage rule:** ASI alone = Informational. Must chain to IDOR/exfil/RCE/ATO for bounty.
 

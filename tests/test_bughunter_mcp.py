@@ -75,7 +75,9 @@ def test_discovered_not_auto_authorized():
 
 
 def test_redact_secrets():
-    assert "[REDACTED]" in redact_text("api_key=sk-abcdefghijklmnopqrstuvwxyz")
+    out = redact_text("api_key=sk-abcdefghijklmnopqrstuvwxyz")
+    assert "sk-abcdefghijklmnopqrstuvwxyz" not in out
+    assert "REDACTED" in out
 
 
 def test_scope_adapter():
