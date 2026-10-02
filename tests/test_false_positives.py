@@ -29,7 +29,7 @@ def _load_validate():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "validate",
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools", "validate.py"),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "bughunter", "tools", "validate.py"),
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

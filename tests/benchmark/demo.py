@@ -39,9 +39,13 @@ def _wait(host, port, timeout=8.0):
 
 
 def check_demo_hardened(host="127.0.0.1", port=8095) -> dict:
+    # serve.py now lives under bughunter/, but the `demo` package it launches
+    # stays at the repo root — put the root on PYTHONPATH so `demo.app` resolves.
+    env = {**os.environ, "APP_HOST": host, "APP_PORT": str(port), "SHUVONSEC_QUIET": "1"}
+    env["PYTHONPATH"] = _REPO + os.pathsep + env.get("PYTHONPATH", "")
     proc = subprocess.Popen(
-        [sys.executable, os.path.join(_REPO, "serve.py")],
-        env={**os.environ, "APP_HOST": host, "APP_PORT": str(port), "SHUVONSEC_QUIET": "1"},
+        [sys.executable, os.path.join(_REPO, "bughunter", "serve.py")],
+        env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     out = {"false_positives": [], "rejected": []}

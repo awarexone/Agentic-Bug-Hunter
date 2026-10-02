@@ -67,6 +67,24 @@ def _filter_recon_to_scope(target: str, checker) -> dict[str, int]:
     return dropped
 
 
+class UnsafeTargetError(ValueError):
+    """Raised when a target/relative path would escape the repo sandbox."""
+
+
+def _safe_under(base: Path, *parts: str) -> Path:
+    """Join parts under `base` and confirm the result stays inside it.
+
+    `target` reaches these tools from an MCP client and is explicitly untrusted
+    (server.py), so a value like '../../../../etc' must not escape REPO/recon.
+    Mirrors the resolve()+containment check bughunter_get_finding already uses.
+    """
+    base_r = base.resolve()
+    candidate = base_r.joinpath(*parts).resolve()
+    if candidate != base_r and base_r not in candidate.parents:
+        raise UnsafeTargetError(f"path escapes {base_r}")
+    return candidate
+
+
 def scope_check(target: str, domains: list[str], excluded: list[str] | None = None) -> dict[str, Any]:
     _sys_path()
     from tools.scope_checker import ScopeChecker
@@ -92,8 +110,15 @@ def run_recon(target: str, *, timeout: int = 600, scope_checker=None) -> dict[st
     script = REPO / "tools" / "recon_engine.sh"
     if not script.exists():
         return {"status": "failed", "error": "RESEARCH_FAILED", "reason": "recon_engine.sh missing"}
+    try:
+        recon_dir = _safe_under(REPO / "recon", target)
+    except UnsafeTargetError as exc:
+        return {"status": "failed", "error": "INVALID_TARGET", "reason": str(exc)}
     env = os.environ.copy()
     env["BB_TARGET"] = target
+    # Pin the output dir to the contained path so recon_engine.sh cannot be
+    # steered outside REPO/recon by a crafted target.
+    env["RECON_OUT_DIR"] = str(recon_dir)
     try:
         proc = subprocess.run(
             ["bash", str(script), target],
@@ -105,7 +130,6 @@ def run_recon(target: str, *, timeout: int = 600, scope_checker=None) -> dict[st
         )
     except subprocess.TimeoutExpired:
         return {"status": "failed", "error": "RESOURCE_LIMIT", "reason": "recon timed out"}
-    recon_dir = REPO / "recon" / target
     summary = {
         "status": "completed" if proc.returncode == 0 else "failed",
         "target": target,
@@ -134,7 +158,12 @@ def run_recon(target: str, *, timeout: int = 600, scope_checker=None) -> dict[st
 
 
 def read_recon_file(target: str, relative: str, limit: int = 50) -> dict[str, Any]:
-    path = REPO / "recon" / target / relative
+    # Both `target` and `relative` are untrusted; contain the joined path so it
+    # cannot become an arbitrary-file-read primitive outside REPO/recon.
+    try:
+        path = _safe_under(REPO / "recon", target, relative)
+    except UnsafeTargetError as exc:
+        return {"status": "failed", "error": "INVALID_TARGET", "reason": str(exc), "target": target}
     if not path.exists():
         return {
             "status": "completed",
@@ -156,7 +185,10 @@ def read_recon_file(target: str, relative: str, limit: int = 50) -> dict[str, An
 
 def attack_surface(target: str) -> dict[str, Any]:
     """Summarize existing recon artifacts (passive)."""
-    base = REPO / "recon" / target
+    try:
+        base = _safe_under(REPO / "recon", target)
+    except UnsafeTargetError as exc:
+        return {"status": "failed", "error": "INVALID_TARGET", "reason": str(exc), "target": target}
     if not base.is_dir():
         return {
             "status": "completed",
@@ -255,7 +287,10 @@ def run_hunt(target: str, *, quick: bool = False, timeout: int = 900, scope_chec
 
 
 def list_findings(target: str, limit: int = 20) -> dict[str, Any]:
-    root = REPO / "findings" / target
+    try:
+        root = _safe_under(REPO / "findings", target)
+    except UnsafeTargetError as exc:
+        return {"status": "failed", "error": "INVALID_TARGET", "reason": str(exc), "target": target}
     if not root.is_dir():
         return {"status": "completed", "target": target, "findings": [], "summary": "No findings directory"}
     items = []

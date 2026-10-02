@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def load_hunt_module():
-    hunt_path = Path(__file__).resolve().parents[1] / "tools" / "hunt.py"
+    hunt_path = Path(__file__).resolve().parents[1] / "bughunter" / "tools" / "hunt.py"
     spec = importlib.util.spec_from_file_location("hunt_module", hunt_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -62,7 +62,7 @@ def test_run_recon_rejects_large_cidr_before_spawning(monkeypatch):
 
 
 def test_recon_engine_expands_cidr_when_nmap_is_unavailable():
-    recon_engine = (Path(__file__).resolve().parents[1] / "tools" / "recon_engine.sh").read_text()
+    recon_engine = (Path(__file__).resolve().parents[1] / "bughunter" / "tools" / "recon_engine.sh").read_text()
 
     assert "_expand_cidr_hosts" in recon_engine
     assert 'log_warn "nmap not installed — expanding the CIDR locally for downstream probing"' in recon_engine
@@ -96,6 +96,6 @@ def test_run_recon_skips_for_empty_list(tmp_path, monkeypatch):
 
 
 def test_recon_engine_handles_domain_list_mode():
-    recon_engine = (Path(__file__).resolve().parents[1] / "tools" / "recon_engine.sh").read_text()
+    recon_engine = (Path(__file__).resolve().parents[1] / "bughunter" / "tools" / "recon_engine.sh").read_text()
     assert 'TARGET_TYPE="list"' in recon_engine
     assert 'Domain-list target' in recon_engine

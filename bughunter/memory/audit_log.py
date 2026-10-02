@@ -27,6 +27,10 @@ class AuditLog:
     ):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self.path.parent, 0o700)  # hunt-memory is owner-only
+        except OSError:
+            pass
         self.max_bytes = max_bytes
         self.keep_backups = keep_backups
 
@@ -38,7 +42,9 @@ class AuditLog:
 
         rotate_if_needed(self.path, max_bytes=self.max_bytes, keep=self.keep_backups)
 
-        fd = os.open(str(self.path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        # 0o600: the audit log records request URLs, which can carry tokens in
+        # the query string — keep it owner-only, not world-readable.
+        fd = os.open(str(self.path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             try:

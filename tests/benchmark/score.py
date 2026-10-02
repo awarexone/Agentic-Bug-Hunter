@@ -54,6 +54,9 @@ def run_benchmark(host: str = "127.0.0.1",
                   vuln_port: int = 8097, demo_port: int = 8096) -> dict:
     flag = f"FLAG{{{secrets.token_hex(8)}}}"
     env = dict(os.environ, SHUVONSEC_QUIET="1")
+    # serve.py now lives under bughunter/, but the `demo` package it launches
+    # stays at the repo root — put the root on PYTHONPATH so `demo.app` resolves.
+    env["PYTHONPATH"] = _REPO + os.pathsep + env.get("PYTHONPATH", "")
 
     vuln = subprocess.Popen(
         [sys.executable, os.path.join(_REPO, "tests", "benchmark", "vuln_target.py")],
@@ -61,7 +64,7 @@ def run_benchmark(host: str = "127.0.0.1",
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     demo = subprocess.Popen(
-        [sys.executable, os.path.join(_REPO, "serve.py")],
+        [sys.executable, os.path.join(_REPO, "bughunter", "serve.py")],
         env={**env, "APP_HOST": host, "APP_PORT": str(demo_port)},
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )

@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-SCANNER_PATH = Path(__file__).resolve().parents[1] / "tools" / "vuln_scanner.sh"
+SCANNER_PATH = Path(__file__).resolve().parents[1] / "bughunter" / "tools" / "vuln_scanner.sh"
 
 
 def test_saml_signature_stripping_is_opt_in_and_policy_gated():

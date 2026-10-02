@@ -23,7 +23,7 @@
     "immunefi"
   ],
   "commands": "./commands",
-  "agents": "./agents",
+  "agents": "./bughunter/agents",
   "skills": "./skills",
   "hooks": "./hooks/hooks.json"
 }

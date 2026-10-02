@@ -19,7 +19,8 @@ sys.path.insert(0, ROOT)
 def brain_module(monkeypatch):
     for env in (
         "BRAIN_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY",
-        "OPENROUTER_API_KEY", "ORCAROUTER_API_KEY",
+        "OPENROUTER_API_KEY", "ORCAROUTER_API_KEY", "FLUXION_API_KEY",
+        "REQUESTY_API_KEY", "REQUESTY_BASE_URL",
     ):
         monkeypatch.delenv(env, raising=False)
     import brain
@@ -159,3 +160,88 @@ def test_orcarouter_init_sets_api_base(brain_module, monkeypatch):
     assert "orcarouter" in client.description.lower()
     assert brain_module.LLMClient.DEFAULT_MODELS["orcarouter"] == "openai/gpt-4o"
     assert "orcarouter/auto" in brain_module.LLMClient.list_models(client)
+
+
+def test_fluxion_key_jumps_to_front(brain_module, monkeypatch):
+    monkeypatch.setenv("FLUXION_API_KEY", "sk-flux-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    tracker = _Tracker(available_provider="fluxion")
+    tracker.bind(client)
+
+    chosen = brain_module.LLMClient._auto_detect(client)
+
+    assert chosen == "fluxion"
+    assert tracker.calls[0] == "fluxion"
+
+
+def test_fluxion_init_sets_api_base(brain_module, monkeypatch):
+    monkeypatch.setenv("FLUXION_API_KEY", "sk-flux-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._ollama = None
+    client._http = None
+    client.description = ""
+    client.provider = "fluxion"
+
+    brain_module.LLMClient._init_provider(client, "fluxion")
+
+    assert client.available is True
+    assert client._api_base == "https://fluxionai.world/v1"
+    assert "fluxion" in client.description.lower()
+    assert brain_module.LLMClient.DEFAULT_MODELS["fluxion"] == "openai/gpt-4o"
+    assert "openai/gpt-4o" in brain_module.LLMClient.list_models(client)
+
+
+def test_fluxion_is_not_default_priority_head(brain_module):
+    assert brain_module.LLMClient.PROVIDER_PRIORITY[0] == "ollama"
+    assert brain_module.LLMClient.PROVIDER_PRIORITY[0] != "fluxion"
+    assert "fluxion" in brain_module.LLMClient.PROVIDER_PRIORITY
+
+
+def test_requesty_key_jumps_to_front(brain_module, monkeypatch):
+    monkeypatch.setenv("REQUESTY_API_KEY", "rqsty-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    tracker = _Tracker(available_provider="requesty")
+    tracker.bind(client)
+
+    chosen = brain_module.LLMClient._auto_detect(client)
+
+    assert chosen == "requesty"
+    assert tracker.calls[0] == "requesty"
+
+
+def test_requesty_init_sets_api_base(brain_module, monkeypatch):
+    monkeypatch.setenv("REQUESTY_API_KEY", "rqsty-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._ollama = None
+    client._http = None
+    client.description = ""
+    client.provider = "requesty"
+
+    brain_module.LLMClient._init_provider(client, "requesty")
+
+    assert client.available is True
+    assert client._api_base == "https://router.requesty.ai/v1"
+    assert "requesty" in client.description.lower()
+    assert brain_module.LLMClient.DEFAULT_MODELS["requesty"] == "anthropic/claude-sonnet-4-6"
+    assert "anthropic/claude-sonnet-4-6" in brain_module.LLMClient.list_models(client)
+
+
+def test_requesty_base_url_override(brain_module, monkeypatch):
+    monkeypatch.setenv("REQUESTY_API_KEY", "rqsty-test")
+    monkeypatch.setenv("REQUESTY_BASE_URL", "https://router.eu.requesty.ai/v1/")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._http = None
+    client.description = ""
+
+    brain_module.LLMClient._init_provider(client, "requesty")
+
+    assert client._api_base == "https://router.eu.requesty.ai/v1"
+
+
+def test_requesty_is_opt_in_only(brain_module):
+    assert "requesty" not in brain_module.LLMClient.PROVIDER_PRIORITY

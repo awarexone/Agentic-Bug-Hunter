@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-VALIDATE_PATH = REPO_ROOT / "tools" / "validate.py"
+VALIDATE_PATH = REPO_ROOT / "bughunter" / "tools" / "validate.py"
 
 
 def _load_validate():

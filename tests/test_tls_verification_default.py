@@ -9,12 +9,12 @@ import os
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 FILES = [
-    "tools/_spray_oauth.py",
-    "tools/h1_mutation_idor.py",
-    "tools/learn.py",
-    "tools/validate.py",
-    "tools/waf_response_analyzer.py",
-    "mcp/hackerone-mcp/server.py",
+    "bughunter/tools/_spray_oauth.py",
+    "bughunter/tools/h1_mutation_idor.py",
+    "bughunter/tools/learn.py",
+    "bughunter/tools/validate.py",
+    "bughunter/tools/waf_response_analyzer.py",
+    "bughunter/mcp/hackerone-mcp/server.py",
 ]
 
 

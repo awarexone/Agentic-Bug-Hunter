@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 from io import BytesIO
 
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "mcp", "hackerone-mcp"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bughunter", "mcp", "hackerone-mcp"))
 
 from server import (
     search_disclosed_reports,

@@ -7,8 +7,9 @@ import pytest
 
 # Add both repo root and tools/ so tests can import either `tools.foo` or `foo`.
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-TOOLS_ROOT = os.path.join(REPO_ROOT, "tools")
-for path in (REPO_ROOT, TOOLS_ROOT):
+PKG_ROOT = os.path.join(REPO_ROOT, "bughunter")
+TOOLS_ROOT = os.path.join(PKG_ROOT, "tools")
+for path in (PKG_ROOT, TOOLS_ROOT):
     if path not in sys.path:
         sys.path.insert(0, path)
 

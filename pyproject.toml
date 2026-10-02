@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-bug-hunter"
+version = "6.0.1"
+description = "AI-powered bug bounty hunting — recon to report, in your terminal."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "AwareXone" }]
+keywords = ["security", "bug-bounty", "recon", "pentest", "ai-agent", "vulnerability"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: POSIX",
+    "Environment :: Console",
+    "Topic :: Security",
+    "Intended Audience :: Developers",
+]
+dependencies = [
+    "requests>=2.32.3",
+    "mcp>=1.28",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3.2"]
+
+[project.urls]
+Homepage = "https://github.com/awarexone/Agentic-Bug-Hunter"
+Repository = "https://github.com/awarexone/Agentic-Bug-Hunter"
+Issues = "https://github.com/awarexone/Agentic-Bug-Hunter/issues"
+
+[project.scripts]
+bughunter = "bughunter.__main__:main"
+bughunter-agent = "bughunter.__main__:agent_main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bughunter*"]
+
+[tool.setuptools.package-data]
+bughunter = ["**/*"]

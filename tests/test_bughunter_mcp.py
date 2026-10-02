@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-MCP = ROOT / "mcp" / "bughunter-mcp"
+MCP = ROOT / "bughunter" / "mcp" / "bughunter-mcp"
 sys.path.insert(0, str(MCP))
 sys.path.insert(0, str(ROOT))
 

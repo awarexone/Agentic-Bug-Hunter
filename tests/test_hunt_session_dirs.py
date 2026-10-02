@@ -11,7 +11,7 @@ if REPO_ROOT not in sys.path:
 
 import importlib.util
 spec = importlib.util.spec_from_file_location(
-    "hunt", os.path.join(REPO_ROOT, "tools", "hunt.py")
+    "hunt", os.path.join(REPO_ROOT, "bughunter", "tools", "hunt.py")
 )
 hunt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hunt)

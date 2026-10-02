@@ -1196,7 +1196,7 @@ sisakulint findings are **potentially exploitable** — not confirmed bugs. Ever
 **Gate question:** Is an AI agent (Gemini CLI, Claude Code, Cline, Codex) invoked in a workflow where external users can influence the prompt?
 
 **Verification depth:**
-1. **Trigger + prompt source** — `issues: opened` → AI triage bot reads `github.event.issue.body`. The body IS the prompt. HTML comments (`<!-- ignore previous instructions -->`) are invisible in GitHub UI but included in the API response and thus in the AI prompt.
+1. **Trigger + prompt source** — `issues: opened` → AI triage bot reads `github.event.issue.body`. The body IS the prompt. HTML comments (e.g. `<!-- [attacker override text hidden here] -->`) are invisible in GitHub UI but included in the API response and thus in the AI prompt.
 2. **Tool permissions** — If the AI agent has Bash/Write/Edit tools and runs with secrets in env, prompt injection = RCE + secret exfil. `allowed_non_write_users: "*"` means ANY user can trigger.
 3. **Multi-phase chain** — Clinejection: prompt injection → AI runs `npm install` from attacker commit → Cacheract plants in npm cache → nightly publish restores cache → tokens stolen → malicious version published. **A prompt injection finding alone may seem low-severity, but it's a gateway to cache poisoning and supply chain attacks.**
 

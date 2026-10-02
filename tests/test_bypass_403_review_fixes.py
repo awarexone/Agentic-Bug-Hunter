@@ -13,7 +13,7 @@ check that keeps false positives out of findings.
 from pathlib import Path
 
 
-BYPASS_PATH = Path(__file__).resolve().parents[1] / "tools" / "bypass_403.sh"
+BYPASS_PATH = Path(__file__).resolve().parents[1] / "bughunter" / "tools" / "bypass_403.sh"
 
 
 def test_bypass_probe_baselines_and_compares_against_block_page():
