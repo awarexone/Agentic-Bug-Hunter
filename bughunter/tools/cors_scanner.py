@@ -131,11 +131,15 @@ def classify(
     """Decide whether an ACAO/ACAC response to `test` is a vuln. Pure function."""
     if acao is None:
         return None
-    acac = (acac_raw or "").strip().lower() == "true"
+    # CORS values are case-sensitive, unlike HTTP header names. Strip only
+    # HTTP optional whitespace (SP/HTAB), not arbitrary Unicode whitespace.
+    # https://fetch.spec.whatwg.org/#cors-check
+    acac = (acac_raw or "").strip(" \t") == "true"
+    allowed_origin = acao.strip(" \t")
     sent = test.origin
 
     # ACAO: * — wildcard. Browsers reject *+credentials, so creds case is moot.
-    if acao.strip() == "*":
+    if allowed_origin == "*":
         if acac:
             return CorsFinding(
                 url, sent, acao, acac, MEDIUM,
@@ -148,7 +152,7 @@ def classify(
             "Only a finding if the endpoint returns sensitive data without a cookie.",
         )
 
-    reflected = acao.strip().lower() == sent.strip().lower()
+    reflected = allowed_origin == sent
     if not reflected:
         return None  # server returned some fixed allow-list origin, not ours
 
