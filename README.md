@@ -41,7 +41,7 @@
 </p>
 
 <p align="center">
-  Built and maintained by <b>AwareXone</b> · <a href="https://www.awarexone.com">Website</a> · <a href="https://x.com/awarexone">X</a> · <a href="https://github.com/Awarexone">GitHub</a>
+  Built and maintained by <b>AwareXone</b> · <a href="https://www.awarexone.com">Website</a> · <a href="https://x.com/shuvonsecc">X</a> · <a href="https://github.com/Awarexone">GitHub</a>
 </p>
 
 <p align="center">
