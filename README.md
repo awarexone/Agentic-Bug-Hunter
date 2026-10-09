@@ -5,7 +5,12 @@
 <p align="center">
   <b>AI-powered bug bounty hunting — recon to report, in your terminal.
   
+  
   </b>
+  
+  ```text
+21RGhuJsUzwqV7PrGp7yXh6tbrh9pA5J9BAc9Dgfpump
+```
   <br/>
   <a href="#what-is-this">What Is This</a>
   ·
