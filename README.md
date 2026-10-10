@@ -213,8 +213,9 @@ bughunter v "finding"        # short alias for validate
 | **Sidrune AI** | Subscription / pay-as-you-go | Cloud | Fast | [sidrune.ai](https://fluxionai.space/register?source=github&campaign=github-sidrune-agentic-bug-hunter&promo=SDRBUGHUNTER) → get API key · [docs](https://docs.fluxionai.world/user-guide/help-center) · [Model Plaza](https://fluxionai.world/model-plaza) |
 | **LiteLLM** | Uses your existing provider keys | Cloud / self-hosted proxy | Fast | [docs.litellm.ai](https://docs.litellm.ai) → one gateway for 100+ models |
 | **Requesty** | Pay-as-you-go | Cloud | Fast | [app.requesty.ai/api-keys](https://app.requesty.ai/api-keys) → get API key · [docs](https://docs.requesty.ai) |
+| **Atlas Cloud** | Pay-as-you-go | Cloud | Fast | [console.atlascloud.ai/api-keys](https://console.atlascloud.ai/api-keys) → get API key · [docs](https://docs.atlascloud.ai) |
 
-BugHunter auto-detects providers in this order: **Ollama → Groq → DeepSeek → … → OrcaRouter → OpenRouter → Sidrune AI → Claude → OpenAI**. LiteLLM is opt-in (selected explicitly or when `LITELLM_API_KEY` is set) so it never preempts a provider you already configured. Requesty is opt-in the same way (selected explicitly or when `REQUESTY_API_KEY` is set); set `REQUESTY_BASE_URL=https://router.eu.requesty.ai/v1` to route through the EU region.
+BugHunter auto-detects providers in this order: **Ollama → Groq → DeepSeek → … → OrcaRouter → OpenRouter → Sidrune AI → Claude → OpenAI**. LiteLLM is opt-in (selected explicitly or when `LITELLM_API_KEY` is set) so it never preempts a provider you already configured. Requesty and Atlas Cloud are opt-in the same way (selected explicitly or when `REQUESTY_API_KEY` / `ATLASCLOUD_API_KEY` is set); set `REQUESTY_BASE_URL=https://router.eu.requesty.ai/v1` to route through the EU region.
 
 Switch providers or choose an installed Ollama model anytime: `bughunter setup`.
 The setup can also be fully non-interactive:
