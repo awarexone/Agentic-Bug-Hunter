@@ -21,6 +21,7 @@ def brain_module(monkeypatch):
         "BRAIN_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY",
         "OPENROUTER_API_KEY", "ORCAROUTER_API_KEY", "FLUXION_API_KEY",
         "REQUESTY_API_KEY", "REQUESTY_BASE_URL",
+        "ATLASCLOUD_API_KEY", "ATLASCLOUD_BASE_URL",
     ):
         monkeypatch.delenv(env, raising=False)
     import brain
@@ -245,3 +246,63 @@ def test_requesty_base_url_override(brain_module, monkeypatch):
 
 def test_requesty_is_opt_in_only(brain_module):
     assert "requesty" not in brain_module.LLMClient.PROVIDER_PRIORITY
+
+
+def test_atlascloud_key_jumps_to_front(brain_module, monkeypatch):
+    monkeypatch.setenv("ATLASCLOUD_API_KEY", "apikey-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    tracker = _Tracker(available_provider="atlascloud")
+    tracker.bind(client)
+
+    chosen = brain_module.LLMClient._auto_detect(client)
+
+    assert chosen == "atlascloud"
+    assert tracker.calls[0] == "atlascloud"
+
+
+def test_atlascloud_init_sets_api_base(brain_module, monkeypatch):
+    monkeypatch.setenv("ATLASCLOUD_API_KEY", "apikey-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._ollama = None
+    client._http = None
+    client.description = ""
+    client.provider = "atlascloud"
+
+    brain_module.LLMClient._init_provider(client, "atlascloud")
+
+    assert client.available is True
+    assert client._api_base == "https://api.atlascloud.ai/v1"
+    assert client._http.headers["Authorization"] == "Bearer apikey-test"
+    assert "atlas cloud" in client.description.lower()
+    assert brain_module.LLMClient.DEFAULT_MODELS["atlascloud"] == "deepseek-ai/deepseek-v4-flash"
+    assert "deepseek-ai/deepseek-v4-flash" in brain_module.LLMClient.list_models(client)
+
+
+def test_atlascloud_base_url_override(brain_module, monkeypatch):
+    monkeypatch.setenv("ATLASCLOUD_API_KEY", "apikey-test")
+    monkeypatch.setenv("ATLASCLOUD_BASE_URL", "https://atlas.example.test/v1/")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._http = None
+    client.description = ""
+
+    brain_module.LLMClient._init_provider(client, "atlascloud")
+
+    assert client._api_base == "https://atlas.example.test/v1"
+
+
+def test_atlascloud_without_key_is_unavailable(brain_module):
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._http = None
+    client.description = ""
+
+    brain_module.LLMClient._init_provider(client, "atlascloud")
+
+    assert client.available is False
+
+
+def test_atlascloud_is_opt_in_only(brain_module):
+    assert "atlascloud" not in brain_module.LLMClient.PROVIDER_PRIORITY

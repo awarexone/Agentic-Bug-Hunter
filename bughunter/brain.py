@@ -5,13 +5,13 @@ from __future__ import annotations
 Brain — Multi-Provider LLM Reasoning Layer for Bug Bounty & VAPT
 Supports: Ollama (local), Claude, OpenAI, Grok, Groq, DeepSeek,
           Gemini, Kimi (Moonshot), Mistral, Together AI, Cerebras, Perplexity,
-          OpenRouter, OrcaRouter, Fluxion, Requesty
+          OpenRouter, OrcaRouter, Fluxion, Requesty, Atlas Cloud
 
 Provider selection (in order of precedence):
   1. BRAIN_PROVIDER env var  (ollama | claude | openai | grok | groq | deepseek |
                                gemini | kimi | mistral | together | cerebras |
                                perplexity | openrouter | orcarouter | fluxion |
-                               requesty)
+                               requesty | atlascloud)
   2. Auto-detect: uses first provider whose API key / server is available
 
 Model selection:
@@ -38,6 +38,8 @@ API keys (env vars):
   REQUESTY_API_KEY    - Requesty (multi-model gateway, anthropic/claude-sonnet-4-6, etc.)
   REQUESTY_BASE_URL   - Requesty base URL (default: https://router.requesty.ai/v1,
                         EU: https://router.eu.requesty.ai/v1)
+  ATLASCLOUD_API_KEY  - Atlas Cloud (multi-model gateway, deepseek-ai/deepseek-v4-flash, etc.)
+  ATLASCLOUD_BASE_URL - Atlas Cloud base URL (default: https://api.atlascloud.ai/v1)
   OLLAMA_HOST         — Ollama base URL (default: http://localhost:11434)
 
 Default model priority (uses first available):
@@ -209,6 +211,7 @@ class LLMClient:
         "orcarouter":  "openai/gpt-4o",
         "fluxion":     "openai/gpt-4o",
         "requesty":    "anthropic/claude-sonnet-4-6",
+        "atlascloud":  "deepseek-ai/deepseek-v4-flash",
         "litellm":     "gpt-4o",
         "ollama":      None,  # resolved dynamically
     }
@@ -278,6 +281,7 @@ class LLMClient:
         "orcarouter":  "ORCAROUTER_API_KEY",
         "fluxion":     "FLUXION_API_KEY",
         "requesty":    "REQUESTY_API_KEY",
+        "atlascloud":  "ATLASCLOUD_API_KEY",
         # Kept last so auto-detect only reaches LiteLLM when LITELLM_API_KEY is
         # set, and never preempts a directly-configured provider above.
         "litellm":     "LITELLM_API_KEY",
@@ -526,6 +530,21 @@ class LLMClient:
             self.available   = True
             self.description = "Requesty (multi-model gateway)"
 
+        elif provider == "atlascloud":
+            key = os.environ.get("ATLASCLOUD_API_KEY", "")
+            if not key:
+                return
+            import requests
+            self._http = requests.Session()
+            self._http.headers.update({
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            })
+            self._api_base   = (os.environ.get("ATLASCLOUD_BASE_URL", "")
+                                or "https://api.atlascloud.ai/v1").rstrip("/")
+            self.available   = True
+            self.description = "Atlas Cloud (multi-model gateway)"
+
         elif provider == "litellm":
             # LiteLLM routes by the model-name prefix (e.g. "anthropic/claude-...",
             # "gemini/gemini-...", "bedrock/...") and reads each target provider's
@@ -557,7 +576,7 @@ class LLMClient:
             elif self.provider in (
                 "openai", "grok", "groq", "deepseek",
                 "gemini", "kimi", "mistral", "together", "cerebras", "perplexity",
-                "openrouter", "orcarouter", "fluxion", "requesty",
+                "openrouter", "orcarouter", "fluxion", "requesty", "atlascloud",
             ):
                 return self._chat_openai_compat(model, system, user, max_tokens, temperature)
         except Exception as e:
@@ -752,6 +771,18 @@ class LLMClient:
                 "gpt-5.4-mini",
                 "gemini-3.5-flash",
                 "gpt-4o-mini@eu",
+            ]
+        elif self.provider == "atlascloud":
+            # Curated starter set; full catalog: GET https://api.atlascloud.ai/v1/models
+            return [
+                "deepseek-ai/deepseek-v4-flash",
+                "deepseek-ai/deepseek-v4-pro",
+                "zai-org/glm-5.2",
+                "moonshotai/kimi-k3",
+                "qwen/qwen3.5-plus",
+                "openai/gpt-5.5",
+                "anthropic/claude-sonnet-4.6",
+                "google/gemini-3.1-pro-preview",
             ]
         elif self.provider == "litellm":
             return self._litellm_list_models()

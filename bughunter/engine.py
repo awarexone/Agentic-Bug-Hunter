@@ -28,6 +28,9 @@ Providers (auto-detected, first available wins):
          requesty   - multi-model gateway, set REQUESTY_API_KEY
                     get key: https://app.requesty.ai/api-keys
                     docs: https://docs.requesty.ai
+         atlascloud - multi-model gateway, set ATLASCLOUD_API_KEY
+                    get key: https://console.atlascloud.ai/api-keys
+                    docs: https://docs.atlascloud.ai
 
 Usage:
   ./engine.py setup                        one-time config wizard
@@ -272,6 +275,7 @@ def cmd_setup(args):
         "9":  ("fluxion",    "Fluxion    (multi-model)       — needs FLUXION_API_KEY"),
         "10": ("litellm",    "LiteLLM    (100+ providers)    — uses per-provider keys or LITELLM_API_KEY"),
         "11": ("requesty",   "Requesty   (multi-model)       - needs REQUESTY_API_KEY"),
+        "12": ("atlascloud", "Atlas Cloud (multi-model)      - needs ATLASCLOUD_API_KEY"),
     }
 
     requested_provider = (
@@ -308,6 +312,7 @@ def cmd_setup(args):
         "orcarouter": "ORCAROUTER_API_KEY",
         "fluxion":    "FLUXION_API_KEY",
         "requesty":   "REQUESTY_API_KEY",
+        "atlascloud": "ATLASCLOUD_API_KEY",
     }
 
     if provider in env_map:
@@ -411,6 +416,7 @@ def cmd_providers(args):
         "orcarouter": "ORCAROUTER_API_KEY",
         "fluxion":    "FLUXION_API_KEY",
         "requesty":   "REQUESTY_API_KEY",
+        "atlascloud": "ATLASCLOUD_API_KEY",
     }
     tier = {
         "ollama": "FREE (local)", "groq": "FREE tier",
@@ -420,6 +426,7 @@ def cmd_providers(args):
         "orcarouter": "subscription",
         "fluxion": "subscription",
         "requesty": "pay-as-you-go",
+        "atlascloud": "pay-as-you-go",
     }
 
     print(f"\n  {'PROVIDER':<12} {'TIER':<16} {'STATUS':<20} {'NOTE'}")
@@ -795,7 +802,7 @@ def main():
         """),
     )
     parser.add_argument("--provider", "-p",
-                        help="Force provider: ollama / groq / deepseek / claude / openai / grok / openrouter / orcarouter / fluxion / litellm / requesty")
+                        help="Force provider: ollama / groq / deepseek / claude / openai / grok / openrouter / orcarouter / fluxion / litellm / requesty / atlascloud")
     parser.add_argument("--model", "-m", help="Force model for this invocation (for example qwen3:14b)")
     parser.add_argument("--no-banner", action="store_true", help="Suppress banner")
 
@@ -805,7 +812,7 @@ def main():
     p_setup.add_argument(
         "--provider", dest="setup_provider",
         choices=["ollama", "groq", "deepseek", "claude", "openai", "grok",
-                 "openrouter", "orcarouter", "fluxion", "litellm", "requesty"],
+                 "openrouter", "orcarouter", "fluxion", "litellm", "requesty", "atlascloud"],
         help="Provider to persist (skips the provider prompt)",
     )
     p_setup.add_argument(
@@ -858,7 +865,8 @@ def main():
     cfg = load_config()
     for env_var in ("GROQ_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY",
                     "OPENAI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY",
-                    "ORCAROUTER_API_KEY", "FLUXION_API_KEY", "REQUESTY_API_KEY"):
+                    "ORCAROUTER_API_KEY", "FLUXION_API_KEY", "REQUESTY_API_KEY",
+                    "ATLASCLOUD_API_KEY"):
         if not os.environ.get(env_var) and cfg.get(env_var):
             os.environ[env_var] = cfg[env_var]
 

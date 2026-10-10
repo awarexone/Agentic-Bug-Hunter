@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Atlas Cloud provider** (`atlascloud`) for standalone `bughunter` / `brain.py`: OpenAI-compatible gateway at `https://api.atlascloud.ai/v1` via `ATLASCLOUD_API_KEY` (optional `ATLASCLOUD_BASE_URL`). Not in the auto-detect priority list; choose option 12 in `bughunter setup`, `BRAIN_PROVIDER=atlascloud`, or `--provider atlascloud`. Default model `deepseek-ai/deepseek-v4-flash` and a short curated model list (same pattern as Requesty).
 - **Requesty provider** (`requesty`) for standalone `bughunter` / `brain.py`: OpenAI-compatible gateway at `https://router.requesty.ai/v1` via `REQUESTY_API_KEY` (optional `REQUESTY_BASE_URL`, e.g. `https://router.eu.requesty.ai/v1` for the EU region). Not in the auto-detect priority list; choose option 11 in `bughunter setup`, `BRAIN_PROVIDER=requesty`, or `--provider requesty`. Default model `anthropic/claude-sonnet-4-6` and a short curated model list (same pattern as OpenRouter).
 - **Fluxion AI provider** (`fluxion`) for standalone `bughunter` / `brain.py` — optional OpenAI-compatible gateway at `https://fluxionai.world/v1` via `FLUXION_API_KEY`. Not the default; choose option 9 in `bughunter setup`, `BRAIN_PROVIDER=fluxion`, or `--provider fluxion`. README partner placement + setup docs link [docs](https://docs.fluxionai.world/user-guide/help-center) and [Model Plaza](https://fluxionai.world/model-plaza).
 - **Claude Code plugin manifest** (`.claude-plugin/plugin.json`) — declares skills, commands, agents, and hooks so the repo passes Claude Code / marketplace plugin validation.
