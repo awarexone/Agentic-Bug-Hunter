@@ -215,7 +215,17 @@ if [ "$INSTALL_CREDENTIAL_ATTACK" = true ]; then
     # --- Homebrew (theHarvester moved here: PyPI package has no CLI entry-point) ---
     BREW_CRED_TOOLS=("hashcat" "theharvester")
     for tool in "${BREW_CRED_TOOLS[@]}"; do
-        if command -v "$tool" &>/dev/null || command -v "theHarvester" &>/dev/null; then
+        # theHarvester's binary is capitalised, so its formula name never matches
+        # `command -v`. Check that alias for theharvester ONLY — the previous
+        # unconditional `|| command -v "theHarvester"` applied on every iteration,
+        # so once theHarvester was present the loop reported "hashcat already
+        # installed" and skipped the install. A false success, easy to miss.
+        if [ "$tool" = "theharvester" ]; then
+            _present() { command -v theharvester &>/dev/null || command -v theHarvester &>/dev/null; }
+        else
+            _present() { command -v "$tool" &>/dev/null; }
+        fi
+        if _present; then
             log_ok "$tool already installed"
         else
             echo "    [*] Installing $tool via brew..."
