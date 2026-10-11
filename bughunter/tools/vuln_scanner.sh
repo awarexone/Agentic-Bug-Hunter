@@ -247,13 +247,16 @@ if ! skip_has upload; then
         # authenticated run compares authed responses against an anonymous 401.
         if [ "$(curl -sk -o /dev/null -w "%{http_code}" --max-time 10 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "${host}/non_existent_$(date +%s)")" -eq 200 ]; then
             log_warn "Catchall detected: $host"
-            CATCHALL_HOSTS="${CATCHALL_HOSTS},${host}"
+            CATCHALL_HOSTS="${CATCHALL_HOSTS},${host},"
         fi
     done < <(head -10 "$ORDERED_SCAN")
     PROBE_PATHS=("/upload.php" "/uploader.php" "/upload/index.php" "/filemanager/index.php" "/ckfinder/core/connector/php/connector.php" "/fckeditor/editor/filemanager/connectors/php/connector.php" "/elfinder.php" "/admin/upload")
     while read -r host; do
         [ -z "$host" ] && continue
-        [[ "$CATCHALL_HOSTS" == *"$host"* ]] && continue
+        # Comma-anchored: an unanchored *"$host"* match is substring, not host
+        # equality, so e.g. a recorded "https://api.t.com:8443" would suppress
+        # the probed "https://api.t.com". Entries are stored ",host," above.
+        case "$CATCHALL_HOSTS" in *",${host},"*) continue ;; esac
         for path in "${PROBE_PATHS[@]}"; do
             U="${host%/}${path}"
             if [ "$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$U")" -eq 200 ]; then
@@ -541,10 +544,15 @@ if ! skip_has saml; then
             # Extract cert if present
             echo "$RESP" | grep -o '<X509Certificate>[^<]*' | head -3 >> "$FINDINGS_DIR/saml/certs.txt" 2>/dev/null || true
         fi
-    done <<< "$(cat "$FINDINGS_DIR/saml/endpoints.txt" 2>/dev/null | awk '{print $2}' || true)"
+        # endpoints.txt rows are: [INFORMATIONAL] [SAML-ENDPOINT] <url> | HTTP <code>
+        # so the URL is field 3. This read used field 2, which is the literal tag
+        # "[SAML-ENDPOINT]" — curl rejected it at URL-parse time, so this whole
+        # metadata leg (and ACS_URL below) has never reached the network.
+    done <<< "$(awk '{print $3}' "$FINDINGS_DIR/saml/endpoints.txt" 2>/dev/null || true)"
 
-    # Signature stripping test via /saml/acs — send stripped assertion
-    ACS_URL=$(cat "$FINDINGS_DIR/saml/endpoints.txt" 2>/dev/null | grep "saml/acs\|saml/login" | head -1 | awk '{print $2}' || true)
+    # Signature stripping test via /saml/acs — send stripped assertion.
+    # Field 3 for the same reason as above.
+    ACS_URL=$(grep "saml/acs\|saml/login" "$FINDINGS_DIR/saml/endpoints.txt" 2>/dev/null | head -1 | awk '{print $3}' || true)
     if [ -n "$ACS_URL" ]; then
         if unsafe_method_guard "POST" "$ACS_URL" "SAML signature-stripping probe"; then
             # Minimal stripped SAMLResponse (no Signature element, NameID = admin).

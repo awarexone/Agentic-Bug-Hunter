@@ -45,7 +45,7 @@ ARSENAL_TOOLS=(
   "naabu|probe|GOBIN=\$HOME/go/bin go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest|github.com/projectdiscovery/naabu"
   "smap|probe|GOBIN=\$HOME/go/bin go install github.com/s0md3v/smap/cmd/smap@latest|github.com/s0md3v/Smap"
   "aquatone|probe|ARCHIVED upstream — use gowitness: GOBIN=\$HOME/go/bin go install github.com/sensepost/gowitness@latest|github.com/michenriksen/aquatone"
-  "eyewitness|probe|git clone https://github.com/RedSiege/EyeWitness && ./Python/setup/setup.sh  # no brew formula|github.com/RedSiege/EyeWitness"
+  "eyewitness|probe|git clone https://github.com/RedSiege/EyeWitness && cd EyeWitness/Python/setup && ./setup.sh  # no brew formula|github.com/RedSiege/EyeWitness"
   # ── URL / endpoint collection ───────────────────────────────────────────
   "katana|crawl|GOBIN=\$HOME/go/bin go install github.com/projectdiscovery/katana/cmd/katana@latest|github.com/projectdiscovery/katana"
   "gau|crawl|GOBIN=\$HOME/go/bin go install github.com/lc/gau/v2/cmd/gau@latest|github.com/lc/gau"
@@ -68,7 +68,7 @@ ARSENAL_TOOLS=(
   "sqlmap|sqli|brew install sqlmap|github.com/sqlmapproject/sqlmap"
   "fuxploider|upload|git clone https://github.com/almandin/fuxploider|github.com/almandin/fuxploider"
   "log4j-scan|cve|git clone https://github.com/fullhunt/log4j-scan|github.com/fullhunt/log4j-scan"
-  "linkfinder|js|git clone https://github.com/GerbenJavado/LinkFinder && pip install -r requirements.txt  # 'linkfinder' is UNCLAIMED on PyPI|github.com/GerbenJavado/LinkFinder"
+  "linkfinder|js|git clone https://github.com/GerbenJavado/LinkFinder && cd LinkFinder && pip install -r requirements.txt  # 'linkfinder' is UNCLAIMED on PyPI|github.com/GerbenJavado/LinkFinder"
   # ── Secrets / credential discovery ──────────────────────────────────────
   "trufflehog|secrets|brew install trufflehog|github.com/trufflesecurity/trufflehog"
   "noseyparker|secrets|brew install noseyparker|github.com/praetorian-inc/noseyparker"
@@ -85,7 +85,7 @@ ARSENAL_TOOLS=(
   "subjack|takeover|GOBIN=\$HOME/go/bin go install github.com/haccer/subjack@latest|github.com/haccer/subjack"
   # ── 403 / WAF bypass ────────────────────────────────────────────────────
   "byp4xx|bypass|GOBIN=\$HOME/go/bin go install github.com/lobuhi/byp4xx@latest|github.com/lobuhi/byp4xx"
-  "whatwaf|bypass|git clone https://github.com/Ekultek/WhatWaf && pip install -r requirements.txt  # UNCLAIMED on PyPI; git+ build fails|github.com/Ekultek/WhatWaf"
+  "whatwaf|bypass|git clone https://github.com/Ekultek/WhatWaf && cd WhatWaf && pip install -r requirements.txt  # UNCLAIMED on PyPI; git+ build fails|github.com/Ekultek/WhatWaf"
   "unwaf|bypass|GOBIN=\$HOME/go/bin go install github.com/mmarting/unwaf@latest|github.com/mmarting/unwaf"
   # ── Credential attack / password spray ──────────────────────────────────
   "hashcat|cred|brew install hashcat|hashcat.net/hashcat"
@@ -97,9 +97,9 @@ ARSENAL_TOOLS=(
   "graphw00f|graphql|git clone https://github.com/dolevf/graphw00f  # PyPI 'graphw00f' is a third-party placeholder, NOT the tool|github.com/dolevf/graphw00f"
   "clairvoyance|graphql|pipx install clairvoyance  # genuine, published by upstream|github.com/nikitastupin/clairvoyance"
   "gqlmap|graphql|git clone https://github.com/swisskyrepo/GraphQLmap  # old hint pointed at a DEAD repo; PyPI 'gqlmap' is a placeholder|github.com/swisskyrepo/GraphQLmap"
-  "graphql-cop|graphql|git clone https://github.com/dolevf/graphql-cop && pip install -r requirements.txt  # UNCLAIMED on PyPI|github.com/dolevf/graphql-cop"
+  "graphql-cop|graphql|git clone https://github.com/dolevf/graphql-cop && cd graphql-cop && pip install -r requirements.txt  # UNCLAIMED on PyPI|github.com/dolevf/graphql-cop"
   # ── JWT / auth ──────────────────────────────────────────────────────────
-  "jwt_tool|jwt|git clone https://github.com/ticarpi/jwt_tool && pip install -r requirements.txt  # 'jwt-tool' is UNCLAIMED on PyPI|github.com/ticarpi/jwt_tool"
+  "jwt_tool|jwt|git clone https://github.com/ticarpi/jwt_tool && cd jwt_tool && pip install -r requirements.txt  # 'jwt-tool' is UNCLAIMED on PyPI|github.com/ticarpi/jwt_tool"
   # ── Bug bounty scope tooling ────────────────────────────────────────────
   "bbscope|scope|GOBIN=\$HOME/go/bin go install github.com/sw33tLie/bbscope@latest|github.com/sw33tLie/bbscope"
   # ── Mobile ──────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ ARSENAL_TOOLS=(
   "maigret|osint|pipx install maigret|github.com/soxoj/maigret"
   "pywhat|osint|pipx install pywhat|github.com/bee-san/pyWhat"
   # ── DNS history / origin IP ─────────────────────────────────────────────
-  "sublert|recon|git clone https://github.com/yassineaboukir/sublert && pip install -r requirements.txt  # UNCLAIMED on PyPI; git+ build fails|github.com/yassineaboukir/sublert"
+  "sublert|recon|git clone https://github.com/yassineaboukir/sublert && cd sublert && pip install -r requirements.txt  # UNCLAIMED on PyPI; git+ build fails|github.com/yassineaboukir/sublert"
   # ── Misc ────────────────────────────────────────────────────────────────
   "gf|filter|GOBIN=\$HOME/go/bin go install github.com/tomnomnom/gf@latest|github.com/tomnomnom/gf"
   "qsreplace|filter|GOBIN=\$HOME/go/bin go install github.com/tomnomnom/qsreplace@latest|github.com/tomnomnom/qsreplace"
