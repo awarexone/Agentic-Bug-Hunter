@@ -1,6 +1,6 @@
 ---
 name: graphql-audit
-description: GraphQL security hunting — introspection abuse, field suggestion enumeration (clairvoyance), batching DoS, IDOR via aliasing, auth bypass, injection via arguments, subscription abuse, depth/complexity bombs, and WAF bypass. Covers graphw00f fingerprinting, gqlmap, graphql-cop, and inql. Use when a target exposes a /graphql, /api/graphql, or GQL-over-HTTP endpoint.
+description: GraphQL security hunting — introspection abuse, field suggestion enumeration (clairvoyance), batching DoS, IDOR via aliasing, auth bypass, injection via arguments, subscription abuse, depth/complexity bombs, and WAF bypass. Covers graphw00f fingerprinting, GraphQLmap, graphql-cop, and inql. Use when a target exposes a /graphql, /api/graphql, or GQL-over-HTTP endpoint.
 ---
 
 # GRAPHQL SECURITY AUDIT
@@ -54,7 +54,7 @@ bash tools/graphql_audit.sh https://target.com/graphql --output-dir ./findings/t
 - `field_suggestions.txt` — discovered fields via clairvoyance
 - `batching_dos.txt` — response time delta for 1 vs 100 queries
 - `alias_bomb.txt` — alias depth test results
-- `gqlmap.txt` — injection scan results
+- `injection.txt` — injection scan results (built-in SQLi probe)
 - `cop_report.txt` — graphql-cop attack checklist results
 - `summary.txt` — hit/miss per phase
 
@@ -264,10 +264,12 @@ curl -s -X POST https://target.com/graphql \
 curl -s -X POST https://target.com/graphql \
   -d '{"query":"{ users(id: \"1 AND SLEEP(5)--\") { email } }"}'
 
-# gqlmap for automated injection
-gqlmap --target https://target.com/graphql \
-  --query '{ users(search: GQLMAP) { id email } }' \
-  --dbms mysql
+# GraphQLmap — interactive REPL, drive it by hand (no batch mode).
+# NB: the tool formerly listed here as "gqlmap" never existed; its upstream
+# is a dead repo and the PyPI name is a third-party placeholder.
+graphqlmap -u https://target.com/graphql --method POST \
+  --headers '{"Authorization":"Bearer <token>"}'
+# then at the "GraphQLmap >" prompt: dump_new, or a query with a SQLi payload
 ```
 
 ### NoSQL Injection (MongoDB common in GraphQL backends)
@@ -374,8 +376,9 @@ print('{\"query\": \"{ me { ' + inner + ' } }\"}')
 Different GraphQL engines have different CVEs. Fingerprint first.
 
 ```bash
-# Install
-pip install graphw00f
+# Install — NOT `pip install graphw00f`: that PyPI name is a third-party
+# placeholder, not this tool. Install from source.
+git clone https://github.com/dolevf/graphw00f && cd graphw00f && pip install -r requirements.txt
 
 # Fingerprint
 python3 -m graphw00f.main -d -t https://target.com/graphql
@@ -394,8 +397,9 @@ python3 -m graphw00f.main -d -t https://target.com/graphql
 ## 11. graphql-cop — Automated Attack Checklist
 
 ```bash
-# Install
-pip install graphql-cop
+# Install — NOT `pip install graphql-cop`: that name is UNCLAIMED on PyPI,
+# so a `pip install` hands execution to whoever registers it. Install from source.
+git clone https://github.com/dolevf/graphql-cop && cd graphql-cop && pip install -r requirements.txt
 
 # Run all checks
 graphql-cop -t https://target.com/graphql
@@ -514,10 +518,10 @@ Remediation:
 | Tool | Purpose | Install |
 |---|---|---|
 | `graphql_audit.sh` | Automated multi-phase sweep | this repo |
-| `graphw00f` | Engine fingerprinting | `pip install graphw00f` |
-| `clairvoyance` | Field discovery (no introspection) | `pip install clairvoyance` |
-| `graphql-cop` | Attack checklist runner | `pip install graphql-cop` |
-| `gqlmap` | SQL/NoSQL injection scanner | `pip install gqlmap` |
+| `graphw00f` | Engine fingerprinting | `git clone https://github.com/dolevf/graphw00f` — PyPI name is a third-party placeholder, not the tool |
+| `clairvoyance` | Field discovery (no introspection) | `pipx install clairvoyance` — genuine, published by upstream |
+| `graphql-cop` | Attack checklist runner | `git clone https://github.com/dolevf/graphql-cop` — UNCLAIMED on PyPI, do not `pip install` |
+| `GraphQLmap` | SQL/NoSQL injection (interactive REPL) | `pipx install git+https://github.com/swisskyrepo/GraphQLmap.git` |
 | `inql` | Burp Suite extension — schema + IDOR | Burp BApp Store |
 | `graphql-voyager` | Visual schema explorer | browser tool |
 | `wscat` | WebSocket subscription testing | `npm i -g wscat` |

@@ -3,7 +3,7 @@
 # GraphQL Security Audit — multi-phase sweep for common GraphQL vulnerabilities
 #
 # Phases: introspection -> fingerprint -> field discovery -> batching DoS ->
-#         alias bomb -> injection scan (gqlmap) -> graphql-cop checklist
+#         alias bomb -> injection scan (built-in) -> graphql-cop checklist
 #
 # Falls back to built-in curl probes when optional tools are missing.
 #
@@ -172,7 +172,8 @@ if python3 -c "import graphw00f" 2>/dev/null; then
   echo "fingerprint: see fingerprint.txt" >> "$SUMMARY"
 else
   skip "graphw00f"
-  echo "(install: pip install graphw00f)" > "$FINGER_OUT"
+  # NB: PyPI 'graphw00f' is a third-party placeholder — do not suggest `pip install`.
+  echo "(install: git clone https://github.com/dolevf/graphw00f && pip install -r requirements.txt)" > "$FINGER_OUT"
   echo "fingerprint: skipped (graphw00f not installed)" >> "$SUMMARY"
 fi
 
@@ -248,31 +249,30 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 5: Injection scan (gqlmap)
+# Phase 5: Injection scan (built-in)
 # ---------------------------------------------------------------------------
+# This phase used to gate on `_have gqlmap`. That tool does not exist: the
+# referenced upstream (nicola-inchingolo/gqlmap) is a dead repo, and the PyPI
+# name is an unclaimed-name placeholder registered by a third party. The gate
+# was therefore never true, and the built-in probe below always ran while the
+# summary misreported the phase as "skipped".
+#
+# Not repointed at swisskyrepo/GraphQLmap (the real tool of that name): it is
+# an interactive REPL (`while True: input("GraphQLmap > ")`) with no batch
+# mode, so driving it from this non-interactive pipeline would block on stdin
+# or die on EOF. Use it by hand for follow-up instead.
 log "Phase 5 -- injection scan"
-GQLMAP_OUT="$OUT_DIR/gqlmap.txt"
+GQLMAP_OUT="$OUT_DIR/injection.txt"
 
-if _have gqlmap; then
-  GQLMAP_ARGS=(--target "$URL" --query '{ users(search: GQLMAP) { id } }')
-  [ -n "$PROXY" ] && GQLMAP_ARGS+=(--proxy "$PROXY")
-  gqlmap "${GQLMAP_ARGS[@]}" 2>&1 | tee "$GQLMAP_OUT" || true
-  echo "injection_scan: completed (see gqlmap.txt)" >> "$SUMMARY"
+# Built-in quick SQLi probe
+log "Built-in SQLi quick probe..."
+SQLI_RESP=$(_gql_post '{"query":"{ users(search: \"1'\''--\") { id } }"}' 2>/dev/null || true)
+if echo "$SQLI_RESP" | grep -qi "syntax\|mysql\|pgsql\|sqlite\|ORA-\|error in your SQL"; then
+  hit "SQL error in response -- possible SQLi in search argument"
+  echo "$SQLI_RESP" >> "$GQLMAP_OUT"
+  echo "sqli_quick_probe: POSSIBLE HIT" >> "$SUMMARY"
 else
-  skip "gqlmap"
-  echo "(install: pip install gqlmap)" > "$GQLMAP_OUT"
-  echo "injection_scan: skipped (gqlmap not installed)" >> "$SUMMARY"
-
-  # Built-in quick SQLi probe
-  log "Built-in SQLi quick probe..."
-  SQLI_RESP=$(_gql_post '{"query":"{ users(search: \"1'\''--\") { id } }"}' 2>/dev/null || true)
-  if echo "$SQLI_RESP" | grep -qi "syntax\|mysql\|pgsql\|sqlite\|ORA-\|error in your SQL"; then
-    hit "SQL error in response -- possible SQLi in search argument"
-    echo "$SQLI_RESP" >> "$GQLMAP_OUT"
-    echo "sqli_quick_probe: POSSIBLE HIT" >> "$SUMMARY"
-  else
-    echo "sqli_quick_probe: no obvious errors" >> "$SUMMARY"
-  fi
+  echo "sqli_quick_probe: no obvious errors" >> "$SUMMARY"
 fi
 
 # ---------------------------------------------------------------------------
@@ -288,7 +288,8 @@ if _have graphql-cop; then
   echo "graphql_cop: completed (see cop_report.txt)" >> "$SUMMARY"
 else
   skip "graphql-cop"
-  echo "(install: pip install graphql-cop)" > "$COP_OUT"
+  # NB: 'graphql-cop' is UNCLAIMED on PyPI — do not suggest `pip install`.
+  echo "(install: git clone https://github.com/dolevf/graphql-cop && pip install -r requirements.txt)" > "$COP_OUT"
   echo "graphql_cop: skipped (not installed)" >> "$SUMMARY"
 fi
 
