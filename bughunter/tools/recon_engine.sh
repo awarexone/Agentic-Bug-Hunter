@@ -361,6 +361,14 @@ cat "$RECON_DIR/subdomains/"*.txt 2>/dev/null | sort -u > "$RECON_DIR/subdomains
 TOTAL_SUBS=$(wc -l < "$RECON_DIR/subdomains/all.txt" 2>/dev/null || echo 0)
 log_ok "Total unique subdomains: $TOTAL_SUBS"
 
+# Always include the seed host itself: deep (4+-level) hostnames, DNS-only
+# zones and internal names return nothing from passive enum, and the app
+# often lives exactly on the seed (mirrors the ip/local seeding above).
+echo "${TARGET}${TARGET_PORT:+:$TARGET_PORT}" >> "$RECON_DIR/subdomains/all.txt"
+sort -u -o "$RECON_DIR/subdomains/all.txt" "$RECON_DIR/subdomains/all.txt"
+TOTAL_SUBS=$(wc -l < "$RECON_DIR/subdomains/all.txt" 2>/dev/null || echo 0)
+log_ok "Seed host included; probe list now: $TOTAL_SUBS host(s)"
+
 fi  # end of domain-only subdomain enum block
 
 # ============================================================
