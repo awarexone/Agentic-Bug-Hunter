@@ -52,24 +52,6 @@
   </a>
 </p>
 
-<p align="center">
-  <a href="https://fluxionai.space/register?source=github&campaign=github-sidrune-agentic-bug-hunter&promo=SDRBUGHUNTER">
-    <img src="https://raw.githubusercontent.com/awarexone/Agentic-Bug-Hunter/main/assets/sidrune-partner-banner.png" alt="Sidrune AI — One API for GPT, Claude, and other leading AI models" width="720"/>
-  </a>
-</p>
-
-<p align="center">
-  <b>One API for GPT, Claude, and other leading AI models</b><br/>
-  <sub>Sign up and get $3 in API credit · partner for BugHunter standalone mode</sub>
-</p>
-
-<p align="center">
-  <a href="https://fluxionai.space/register?source=github&campaign=github-sidrune-agentic-bug-hunter&promo=SDRBUGHUNTER"><b>Register with partner link →</b></a>
-  · promo <code>SDRBUGHUNTER</code>
-  · <a href="https://docs.fluxionai.world/user-guide/help-center">Docs</a>
-  · <a href="https://fluxionai.world/model-plaza">Model Plaza</a>
-</p>
-
 ---
 
 ## Get started (30 seconds)
@@ -210,11 +192,10 @@ bughunter v "finding"        # short alias for validate
 | **Grok (xAI)** | Paid | Cloud | Fast | [console.x.ai](https://console.x.ai) → `grok-4.5` |
 | **OpenRouter** | Subscription / pay-as-you-go | Cloud | Fast | [openrouter.ai/keys](https://openrouter.ai/keys) → get API key |
 | **OrcaRouter** | Subscription / pay-as-you-go | Cloud | Fast | [orcarouter.ai](https://www.orcarouter.ai) → get API key |
-| **Sidrune AI** | Subscription / pay-as-you-go | Cloud | Fast | [sidrune.ai](https://fluxionai.space/register?source=github&campaign=github-sidrune-agentic-bug-hunter&promo=SDRBUGHUNTER) → get API key · [docs](https://docs.fluxionai.world/user-guide/help-center) · [Model Plaza](https://fluxionai.world/model-plaza) |
 | **LiteLLM** | Uses your existing provider keys | Cloud / self-hosted proxy | Fast | [docs.litellm.ai](https://docs.litellm.ai) → one gateway for 100+ models |
 | **Requesty** | Pay-as-you-go | Cloud | Fast | [app.requesty.ai/api-keys](https://app.requesty.ai/api-keys) → get API key · [docs](https://docs.requesty.ai) |
 
-BugHunter auto-detects providers in this order: **Ollama → Groq → DeepSeek → … → OrcaRouter → OpenRouter → Sidrune AI → Claude → OpenAI**. LiteLLM is opt-in (selected explicitly or when `LITELLM_API_KEY` is set) so it never preempts a provider you already configured. Requesty is opt-in the same way (selected explicitly or when `REQUESTY_API_KEY` is set); set `REQUESTY_BASE_URL=https://router.eu.requesty.ai/v1` to route through the EU region.
+BugHunter auto-detects providers in this order: **Ollama → Groq → DeepSeek → … → OrcaRouter → OpenRouter → Claude → OpenAI**. LiteLLM is opt-in (selected explicitly or when `LITELLM_API_KEY` is set) so it never preempts a provider you already configured. Requesty is opt-in the same way (selected explicitly or when `REQUESTY_API_KEY` is set); set `REQUESTY_BASE_URL=https://router.eu.requesty.ai/v1` to route through the EU region.
 
 Switch providers or choose an installed Ollama model anytime: `bughunter setup`.
 The setup can also be fully non-interactive:
@@ -253,25 +234,6 @@ export GROQ_API_KEY="your-key-here"     # free at console.groq.com
 ./install.sh --agent standalone
 bughunter setup       # choose Groq
 bughunter hunt target.com
-```
-
-### Sidrune AI setup (multi-model gateway)
-
-Sidrune AI is an optional OpenAI-compatible gateway (`https://fluxionai.world/v1`). It is **not** the default provider — pick it in `bughunter setup`, or set `BRAIN_PROVIDER=fluxion` when you want it.
-
-```bash
-# 1. Register (AwareXone partner link) and create an API key
-#    https://fluxionai.space/register?source=github&campaign=github-sidrune-agentic-bug-hunter&promo=SDRBUGHUNTER
-#    Docs: https://docs.fluxionai.world/user-guide/help-center
-#    Models: https://fluxionai.world/model-plaza
-
-export FLUXION_API_KEY="your-key-here"
-./install.sh --agent standalone
-bughunter setup --provider fluxion --model openai/gpt-4o
-bughunter hunt target.com
-
-# Or one-off:
-bughunter --provider fluxion --model openai/gpt-4o hunt target.com
 ```
 
 ---
