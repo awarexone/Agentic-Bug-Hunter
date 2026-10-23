@@ -30,6 +30,7 @@
     "openrouter":  "OPENROUTER_API_KEY=...  (anthropic/claude-sonnet-4.6 / openai/gpt-4o / …)",
     "orcarouter":  "ORCAROUTER_API_KEY=...  (openai/gpt-4o / orcarouter/auto / …)",
     "fluxion":     "FLUXION_API_KEY=...  (openai/gpt-4o / … — https://fluxionai.world/v1)",
-    "requesty":    "REQUESTY_API_KEY=...  (anthropic/claude-sonnet-4-6 / openai/gpt-4o-mini / ...)"
+    "requesty":    "REQUESTY_API_KEY=...  (anthropic/claude-sonnet-4-6 / openai/gpt-4o-mini / ...)",
+    "llmtr":       "LLMTR_API_KEY=...  (free-tier models — minimax/minimax-m3.1-flash-free / ... — https://llmtr.com/v1)"
   }
 }
