@@ -20,7 +20,7 @@ def brain_module(monkeypatch):
     for env in (
         "BRAIN_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY",
         "OPENROUTER_API_KEY", "ORCAROUTER_API_KEY", "FLUXION_API_KEY",
-        "REQUESTY_API_KEY", "REQUESTY_BASE_URL",
+        "REQUESTY_API_KEY", "REQUESTY_BASE_URL", "LLMTR_API_KEY",
     ):
         monkeypatch.delenv(env, raising=False)
     import brain
@@ -245,3 +245,34 @@ def test_requesty_base_url_override(brain_module, monkeypatch):
 
 def test_requesty_is_opt_in_only(brain_module):
     assert "requesty" not in brain_module.LLMClient.PROVIDER_PRIORITY
+
+
+def test_llmtr_key_jumps_to_front(brain_module, monkeypatch):
+    monkeypatch.setenv("LLMTR_API_KEY", "llmtr-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    tracker = _Tracker(available_provider="llmtr")
+    tracker.bind(client)
+
+    chosen = brain_module.LLMClient._auto_detect(client)
+
+    assert chosen == "llmtr"
+    assert tracker.calls[0] == "llmtr"
+
+
+def test_llmtr_init_sets_api_base(brain_module, monkeypatch):
+    monkeypatch.setenv("LLMTR_API_KEY", "llmtr-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._ollama = None
+    client._http = None
+    client.description = ""
+    client.provider = "llmtr"
+
+    brain_module.LLMClient._init_provider(client, "llmtr")
+
+    assert client.available is True
+    assert client._api_base == "https://llmtr.com/v1"
+    assert "llmtr" in client.description.lower()
+    assert brain_module.LLMClient.DEFAULT_MODELS["llmtr"] == "minimax/minimax-m3.1-flash-free"
+    assert "minimax/minimax-m3.1-flash-free" in brain_module.LLMClient.list_models(client)
