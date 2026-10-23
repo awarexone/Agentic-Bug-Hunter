@@ -17,7 +17,7 @@ from the program page.
 
 ## What it does
 
-`tools/scope_aggregator.sh` runs in two strategies:
+`bughunter/tools/scope_aggregator.sh` runs in two strategies:
 
 1. **bbscope** (`sw33tLie/bbscope`) — authenticated multi-platform pull. Best
    freshness, but needs platform tokens in env (`H1_USERNAME`, `H1_API_KEY`,

@@ -79,15 +79,15 @@ This repo is an agent-portable bug bounty plugin for professional hunting across
 
 ### Tools (Python/shell — in `tools/`)
 
-See **`tools/README.md`** for the full ~50-tool catalogue. Highlights:
+See **`bughunter/tools/README.md`** for the full ~50-tool catalogue. Highlights:
 
-- `tools/hunt.py` — master orchestrator (auto lead-board ingest + EOL after recon; `--graphql` / `--cve-hunt` / `--zero-day`)
-- `tools/lead_board.py` — persistent recon→skill lead ledger (`ingest` / `show` / `next` / `touch`)
-- `tools/recon_engine.sh` · `vuln_scanner.sh` · `validate.py` · `scope_checker.py`
-- `tools/graphql_audit.sh` · `cicd_scanner.sh` · `cve_scan.sh` · `eol_check.py`
-- `tools/waf_encoder.py` · `waf_response_analyzer.py` · `multipart_mutator.py` · `bypass_403.sh`
-- `tools/external_arsenal.sh` — installed-tool registry (~50 tools); `_have <tool>` gate
-- `tools/secrets_hunter.sh` · `takeover_scanner.sh` · `cloud_recon.sh` · `param_discovery.sh`
+- `bughunter/tools/hunt.py` — master orchestrator (auto lead-board ingest + EOL after recon; `--graphql` / `--cve-hunt` / `--zero-day`)
+- `bughunter/tools/lead_board.py` — persistent recon→skill lead ledger (`ingest` / `show` / `next` / `touch`)
+- `bughunter/tools/recon_engine.sh` · `vuln_scanner.sh` · `validate.py` · `scope_checker.py`
+- `bughunter/tools/graphql_audit.sh` · `cicd_scanner.sh` · `cve_scan.sh` · `eol_check.py`
+- `bughunter/tools/waf_encoder.py` · `waf_response_analyzer.py` · `multipart_mutator.py` · `bypass_403.sh`
+- `bughunter/tools/external_arsenal.sh` — installed-tool registry (~50 tools); `_have <tool>` gate
+- `bughunter/tools/secrets_hunter.sh` · `takeover_scanner.sh` · `cloud_recon.sh` · `param_discovery.sh`
 - Credential attack (opt-in): `wordlist_engine.sh` · `osint_employees.sh` · `breach_checker.py` · `spray_orchestrator.sh`
 - Web3: `token_scanner.py`
 

@@ -1,5 +1,5 @@
 ---
-description: Run the full recon pipeline by invoking tools/recon_engine.sh — subdomain enum (subfinder + amass + crt.sh + wayback), httpx live host probing with tech detection, nmap port scan, gau URL collection, JS analysis, ffuf directory fuzzing, parameter discovery, config exposure check, CI/CD workflow scan. Outputs to recon/<target>/. Handles FQDN, IP, CIDR, and file-of-hosts targets automatically. Usage: /recon target.com
+description: Run the full recon pipeline by invoking bughunter/tools/recon_engine.sh — subdomain enum (subfinder + amass + crt.sh + wayback), httpx live host probing with tech detection, nmap port scan, gau URL collection, JS analysis, ffuf directory fuzzing, parameter discovery, config exposure check, CI/CD workflow scan. Outputs to recon/<target>/. Handles FQDN, IP, CIDR, and file-of-hosts targets automatically. Usage: /recon target.com
 ---
 
 # /recon
@@ -10,19 +10,19 @@ Run the full recon pipeline on a target. **Always invoke the production script d
 
 ```bash
 # Domain (full subdomain enum + crawl + fuzz):
-bash tools/recon_engine.sh target.com
+bash bughunter/tools/recon_engine.sh target.com
 
 # CIDR — skips subdomain enum, runs nmap host sweep:
-bash tools/recon_engine.sh 10.0.0.0/24
+bash bughunter/tools/recon_engine.sh 10.0.0.0/24
 
 # Single IP — scope-locked, no subdomain enum:
-bash tools/recon_engine.sh 192.0.2.10
+bash bughunter/tools/recon_engine.sh 192.0.2.10
 
 # Domain list (programs without wildcard scope) — pre-resolved hosts in a file:
-bash tools/recon_engine.sh path/to/scope.txt
+bash bughunter/tools/recon_engine.sh path/to/scope.txt
 
 # Quick mode (skip amass + reduce ffuf coverage):
-bash tools/recon_engine.sh target.com --quick
+bash bughunter/tools/recon_engine.sh target.com --quick
 ```
 
 The script auto-detects target type:
@@ -51,7 +51,7 @@ recon/<target>/
 You're on an older revision of this command file where the model re-implemented the pipeline inline and never invoked the production script. Pull latest, or run the script directly:
 
 ```bash
-bash tools/recon_engine.sh path/to/file.txt
+bash bughunter/tools/recon_engine.sh path/to/file.txt
 ```
 
 You should see `[*] Domain-list target — loading <file> (skipping subdomain enum)` near the start.
@@ -61,10 +61,10 @@ You should see `[*] Domain-list target — loading <file> (skipping subdomain en
 Same root cause as the hunt-loop bug. Run the bash directly:
 
 ```bash
-bash tools/recon_engine.sh target.com
+bash bughunter/tools/recon_engine.sh target.com
 ```
 
-Or in your prompt: "Run `bash tools/recon_engine.sh target.com` and report the output. Do not re-implement the steps."
+Or in your prompt: "Run `bash bughunter/tools/recon_engine.sh target.com` and report the output. Do not re-implement the steps."
 
 ### "Missing tools"
 
@@ -85,7 +85,7 @@ Recon needs: `subfinder`, `dnsx`, `httpx` (ProjectDiscovery — not the Python C
 ## 5-Minute Kill Signal
 
 If after running this pipeline you see:
-- All hosts return 403 even after `tools/bypass_403.sh` + wafw00f bypass, or return only static marketing pages
+- All hosts return 403 even after `bughunter/tools/bypass_403.sh` + wafw00f bypass, or return only static marketing pages
 - No API endpoints visible
 - No interesting parameters in URLs
 - nuclei returns 0 medium/high findings
@@ -96,7 +96,7 @@ If after running this pipeline you see:
 
 # Reference: What the script does (informational)
 
-The pipeline in `tools/recon_engine.sh` runs these phases (numbers may shift; check the script source):
+The pipeline in `bughunter/tools/recon_engine.sh` runs these phases (numbers may shift; check the script source):
 
 1. **Subdomain enumeration** — subfinder + Chaos API (if `$CHAOS_API_KEY` set) + amass + crt.sh + wayback.
 2. **Live host discovery** — dnsx resolve, then httpx with status/title/tech-detect.
@@ -104,7 +104,7 @@ The pipeline in `tools/recon_engine.sh` runs these phases (numbers may shift; ch
 4. **URL crawl** — katana deep crawl + waybackurls + gau historical.
 5. **gf classification** — xss, ssrf, idor, sqli, redirect, lfi candidate files.
 6. **JS analysis** — LinkFinder / SecretFinder on every JS bundle.
-7. **ffuf directory fuzzing** — uses `wordlists/common.txt` (run `python3 tools/hunt.py --setup-wordlists` once if missing).
+7. **ffuf directory fuzzing** — uses `wordlists/common.txt` (run `python3 bughunter/tools/hunt.py --setup-wordlists` once if missing).
 8. **Parameter discovery** — Arjun / x8 against high-value endpoints.
 9. **Config exposure** — `.git/`, `.env`, `wp-config.php`, `.DS_Store`, swagger.json, etc.
 10. **CI/CD scan** — sisakulint against any GitHub Actions workflows discovered.

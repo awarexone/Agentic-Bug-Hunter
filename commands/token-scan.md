@@ -33,13 +33,13 @@ If ANY answer is NO → flag and proceed with extreme caution.
 
 ```bash
 # EVM
-python3 tools/token_scanner.py <contract_path>
+python3 bughunter/tools/token_scanner.py <contract_path>
 
 # Solana
-python3 tools/token_scanner.py <program_dir> --chain solana --recursive
+python3 bughunter/tools/token_scanner.py <program_dir> --chain solana --recursive
 
 # JSON output for piping
-python3 tools/token_scanner.py <path> --json
+python3 bughunter/tools/token_scanner.py <path> --json
 ```
 
 The scanner checks all 8 bug classes via regex and returns a risk score + verdict.

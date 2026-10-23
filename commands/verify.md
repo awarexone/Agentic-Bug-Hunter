@@ -30,8 +30,8 @@ step consumes.
 Run directly:
 
 ```bash
-tools/verifier.py check <bundle-dir> --marker "signal-that-proves-the-bug"
-tools/verifier.py sweep [root] --require-proof
+bughunter/tools/verifier.py check <bundle-dir> --marker "signal-that-proves-the-bug"
+bughunter/tools/verifier.py sweep [root] --require-proof
 ```
 
 ## Verdicts
@@ -59,7 +59,7 @@ classes work too — open-redirect (`Location`), CORS (`Access-Control-Allow-Ori
 
 ## Safety
 
-- Re-derivation uses the SSRF-guarded opener (`tools/safe_http.py`), **and the
+- Re-derivation uses the SSRF-guarded opener (`bughunter/tools/safe_http.py`), **and the
   initial host is validated** against the same metadata/private/loopback blocklist
   before the first request — a tampered bundle URL can't make verification hit
   `169.254.169.254`/localhost (it holds as `INCONCLUSIVE`).

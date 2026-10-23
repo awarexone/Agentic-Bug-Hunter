@@ -71,10 +71,10 @@ The script checks for `cewler` and `hashcat` and exits with a helpful hint if mi
 
 ## What this does NOT do
 
-- **No HIBP filtering** — PR #4 will add `tools/breach_checker.py` to rank by leak prevalence.
+- **No HIBP filtering** — PR #4 will add `bughunter/tools/breach_checker.py` to rank by leak prevalence.
 - **No OSINT input** — PR #3 will feed employee names, birthdays, and project codes via pydictor.
 - **No spray execution** — PR #5 will add `/spray` (with mandatory scope check and lockout warning).
 
 ## Underlying tool
 
-`tools/wordlist_engine.sh <target> [flags]` — call directly if you prefer a non-slash interface.
+`bughunter/tools/wordlist_engine.sh <target> [flags]` — call directly if you prefer a non-slash interface.

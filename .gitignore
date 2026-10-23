@@ -50,6 +50,7 @@ nmap-output/
 .forge/
 
 # Runtime lead-board ledgers (per-target, regenerated on each hunt)
-memory/leads/
+# ** matches both the repo-root layout and bughunter/memory/leads/ after the bughunter/ move
+**/memory/leads/
 dist/
 build/

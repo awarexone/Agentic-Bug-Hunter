@@ -38,3 +38,28 @@ jobs:
 
       - name: Run test suite
         run: pytest -q
+
+  tool-paths:
+    name: tool paths resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Invoked tool paths must exist
+        run: |
+          # Every `bash|python3 <dir>/<file>.{py,sh}` in commands/ and skills/ must
+          # resolve to a real file. Bare filenames (no slash) are external tools and
+          # are skipped. Guards against the bughunter/ restructure leaving stale paths.
+          missing=0
+          while IFS= read -r p; do
+            case "$p" in
+              */*) if [ ! -f "$p" ]; then echo "MISSING: $p"; missing=1; fi ;;
+              *)   : ;;
+            esac
+          done < <(grep -rhoE '(bash|python3?) [A-Za-z0-9/._-]+\.(py|sh)' commands/ skills/ \
+                     | awk '{print $2}' | sort -u)
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::command/skill docs reference tool paths that do not exist (see MISSING lines)"
+            exit 1
+          fi
+          echo "All invoked tool paths resolve."

@@ -137,8 +137,8 @@ Type 'yes' to proceed (anything else aborts): _
 
 - Built-in modes (http-form, oauth): pure Python 3.9+ stdlib
 - TREVOR modes (o365, okta): `trevorspray` from `./install_tools.sh --with-credential-attack`
-- `tools/scope_checker.py` for typed-confirmation logic (Python 3.9 compat)
+- `bughunter/tools/scope_checker.py` for typed-confirmation logic (Python 3.9 compat)
 
 ## Underlying tool
 
-`tools/spray_orchestrator.sh <url> --mode ... --users ... --passes ...`
+`bughunter/tools/spray_orchestrator.sh <url> --mode ... --users ... --passes ...`

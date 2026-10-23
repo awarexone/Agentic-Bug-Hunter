@@ -44,7 +44,7 @@ open Claude Code.
 ## B. Verify the arsenal (15 sec)
 
 ```bash
-bash tools/external_arsenal.sh
+bash bughunter/tools/external_arsenal.sh
 ```
 
 You'll see the **BUGHUNTER** banner, then a table of ~50 external tools with
@@ -77,7 +77,7 @@ Visit `http://127.0.0.1:8080/` in your browser — the page is a small
 ## D. Recon (60 sec)
 
 Recon is about **discovering attack surface**. Real targets get the full
-`tools/recon_engine.sh` treatment (subdomain enum + URL crawl + tech
+`bughunter/tools/recon_engine.sh` treatment (subdomain enum + URL crawl + tech
 fingerprint + nuclei sweep). For our localhost target there's no DNS to
 enumerate, so we go straight to the URL surface.
 
@@ -111,7 +111,7 @@ you have your **attack surface**:
 > Pro tip: the real recon engine extracts the same list via `katana` + `gau`
 > + `waybackurls`. For real targets:
 > ```bash
-> bash tools/recon_engine.sh target.com
+> bash bughunter/tools/recon_engine.sh target.com
 > ```
 
 ---
@@ -119,7 +119,7 @@ you have your **attack surface**:
 ## E. Hunt — find each bug (2 min)
 
 We'll probe each endpoint with a single `curl` and note the verdict. In a
-real engagement you'd run `bash tools/vuln_scanner.sh recon/target` instead
+real engagement you'd run `bash bughunter/tools/vuln_scanner.sh recon/target` instead
 of doing it by hand — that's the same probes, batched.
 
 ### 1. Reflected XSS — `/search?q=`
@@ -222,7 +222,7 @@ Six findings is too many to report at once — pick the most-paid one. We'll
 run the validator against the .env exposure:
 
 ```bash
-python3 tools/validate.py --program shuvonsec-demo
+python3 bughunter/tools/validate.py --program shuvonsec-demo
 ```
 
 The validator walks you through the **4-gate checklist** and **CVSS 3.1**
@@ -291,7 +291,7 @@ Same banner, same workflow line, every step.
 
 ## Where to go next
 
-- `bash tools/external_arsenal.sh --install-hint <tool>` to add scanners
+- `bash bughunter/tools/external_arsenal.sh --install-hint <tool>` to add scanners
   the demo skipped (nuclei, ffuf, dalfox — see the install table).
 - `/scope-aggregate <program>` to pull every in-scope asset across H1,
   Bugcrowd, Intigriti, YWH, and Immunefi in one shot.

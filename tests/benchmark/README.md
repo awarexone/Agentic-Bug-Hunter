@@ -1,6 +1,6 @@
 # Verifier Benchmark
 
-Measures the deterministic verifier gate (`tools/verifiers/` + `tools/validate_core.py`)
+Measures the deterministic verifier gate (`tools/verifiers/` + `bughunter/tools/validate_core.py`)
 the way XBOW measures itself: with ground-truth targets and a canary oracle, so a
 "solve" can never be fabricated.
 

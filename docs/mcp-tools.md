@@ -25,4 +25,4 @@
 
 List at runtime: `bughunter mcp tools`.
 
-Backed by existing `tools/recon_engine.sh`, `tools/hunt.py`, `tools/validate.py`, `tools/lead_board.py`, `memory/*`, and `mcp/hackerone-mcp/`.
+Backed by existing `bughunter/tools/recon_engine.sh`, `bughunter/tools/hunt.py`, `bughunter/tools/validate.py`, `bughunter/tools/lead_board.py`, `memory/*`, and `mcp/hackerone-mcp/`.

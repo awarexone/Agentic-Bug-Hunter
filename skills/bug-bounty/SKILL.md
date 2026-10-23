@@ -49,11 +49,11 @@ Full pipeline: Recon -> Learn -> Hunt -> Validate -> Report. One skill for every
 15. **ONE-HOUR RULE** -- stuck on one target for an hour with no progress? SWITCH CONTEXT
 16. **TWO-EYE APPROACH** -- combine systematic testing (checklist) with anomaly detection (watch for unexpected behavior)
 17. **T-SHAPED KNOWLEDGE** -- go DEEP in one area and BROAD across everything else
-18. **LEAD BOARD — never lose a lead** -- after recon run `python3 tools/lead_board.py ingest <target>` + `show` + `next`. Route each signal to its skill ("GraphQL → hunt-graphql"). `touch` when starting/killing/reporting. Focus on one lead; the board remembers the rest. Surface stale high-priority leads unprompted.
+18. **LEAD BOARD — never lose a lead** -- after recon run `python3 bughunter/tools/lead_board.py ingest <target>` + `show` + `next`. Route each signal to its skill ("GraphQL → hunt-graphql"). `touch` when starting/killing/reporting. Focus on one lead; the board remembers the rest. Surface stale high-priority leads unprompted.
 
 > **For the full hunting methodology** — 5-phase non-linear workflow, developer psychology framework, session discipline, tool routing by phase, and Wide/Deep route selection — see **`skills/bb-methodology/SKILL.md`**.
 >
-> **Tool catalogue:** `tools/README.md` (~50 tools). Orchestrator: `python3 tools/hunt.py --target T` (auto lead ingest; add `--graphql` / `--cve-hunt` as needed).
+> **Tool catalogue:** `bughunter/tools/README.md` (~50 tools). Orchestrator: `python3 bughunter/tools/hunt.py --target T` (auto lead ingest; add `--graphql` / `--cve-hunt` as needed).
 
 ---
 
@@ -67,20 +67,20 @@ every downstream tool (httpx, katana, ffuf, nuclei, dalfox, the SQLi / SSTI
 
 ```bash
 # Pick ONE of these and run hunt.py normally:
-python3 tools/hunt.py --target T --cookie 'session=eyJabc...'
-python3 tools/hunt.py --target T --bearer 'eyJhbGciOi...'
-python3 tools/hunt.py --target T --auth-file .private/T.json
+python3 bughunter/tools/hunt.py --target T --cookie 'session=eyJabc...'
+python3 bughunter/tools/hunt.py --target T --bearer 'eyJhbGciOi...'
+python3 bughunter/tools/hunt.py --target T --auth-file .private/T.json
 
 # Or via env (persists for the shell):
 export BBHUNT_COOKIE='session=eyJabc...'
-python3 tools/hunt.py --target T
+python3 bughunter/tools/hunt.py --target T
 ```
 
 **For IDOR / BOLA hunts**, load two sessions and diff behavior:
 
 ```bash
-python3 tools/hunt.py --target T --auth-file .private/T-user-a.json
-python3 tools/hunt.py --target T --auth-file .private/T-user-b.json
+python3 bughunter/tools/hunt.py --target T --auth-file .private/T-user-a.json
+python3 bughunter/tools/hunt.py --target T --auth-file .private/T-user-b.json
 # Audit log entries carry different session_id hashes → diff which
 # endpoints behaved differently per identity.
 ```

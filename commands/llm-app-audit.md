@@ -18,7 +18,7 @@ with its privileges on someone else's behalf, not just say something. Loads the
 
 | Attack | ASI | Deterministic oracle |
 |---|---|---|
-| Tool-call hijacking | ASI02 | OOB callback — the tool reaches your collaborator host (`tools/oob_listener.py`) |
+| Tool-call hijacking | ASI02 | OOB callback — the tool reaches your collaborator host (`bughunter/tools/oob_listener.py`) |
 | Cross-session memory poisoning | ASI06 | plant canary as identity A, re-read as identity B |
 | Confused-deputy via tools | ASI02/03 | privileged record returned that the user's role can't access |
 | Agent-to-agent IDOR | ASI07 | agent A returns agent B's context |
@@ -28,8 +28,8 @@ with its privileges on someone else's behalf, not just say something. Loads the
 ## Supporting tools
 
 ```bash
-tools/llm_redteam.py --url <endpoint> --category excessive-agency --json   # tool-abuse probes
-tools/oob_listener.py --listen                                             # confirm tool reach-out
+bughunter/tools/llm_redteam.py --url <endpoint> --category excessive-agency --json   # tool-abuse probes
+bughunter/tools/oob_listener.py --listen                                             # confirm tool reach-out
 tools/verifiers/ (xss)                                                      # confirm insecure-output XSS at the sink
 ```
 

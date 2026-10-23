@@ -20,7 +20,7 @@ scramble for a PoC screenshot later.
 Run directly:
 
 ```bash
-tools/visual_triage.py -l recon/target.com/live/urls.txt -o shots/
+bughunter/tools/visual_triage.py -l recon/target.com/live/urls.txt -o shots/
 ```
 
 ## Tooling
@@ -31,7 +31,7 @@ Uses whichever screenshotter is installed, in order:
 2. **aquatone** — fast, clusters similar pages together
 3. **httpx `-screenshot`** — already a core dependency, so this always works
 
-All three are registered in `tools/external_arsenal.sh`. Output always includes
+All three are registered in `bughunter/tools/external_arsenal.sh`. Output always includes
 a self-contained `gallery.html` (no external assets) you can open locally or
 attach to a report.
 

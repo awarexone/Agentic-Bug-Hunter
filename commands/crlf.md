@@ -19,7 +19,7 @@ lands in the **response** — proof of CRLF injection.
 Run directly:
 
 ```bash
-tools/crlf_scanner.py "https://target.com/r?u=x" --host-header
+bughunter/tools/crlf_scanner.py "https://target.com/r?u=x" --host-header
 ```
 
 ## What it injects

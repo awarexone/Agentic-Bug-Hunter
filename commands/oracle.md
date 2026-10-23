@@ -22,9 +22,9 @@ your own track record says pay, not the ones a hardcoded regex guesses.
 Run directly:
 
 ```bash
-tools/oracle.py train
-tools/oracle.py rank target.com --top 20
-tools/oracle.py score --class open-redirect --url https://t.com/go?next=/x --json
+bughunter/tools/oracle.py train
+bughunter/tools/oracle.py rank target.com --top 20
+bughunter/tools/oracle.py score --class open-redirect --url https://t.com/go?next=/x --json
 ```
 
 ## What it learns

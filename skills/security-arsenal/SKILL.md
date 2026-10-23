@@ -543,7 +543,7 @@ WAF vendors often return **HTTP 200 OK with a block page** to confuse attackers:
 - Custom enterprise WAFs: `200 OK` + "Your request has been blocked. Log ID: WAF-..."
 - AWS + CloudFront custom error pages: may return `200` or `403` depending on config
 
-**Verdict system in `tools/bypass_403.sh`:**
+**Verdict system in `bughunter/tools/bypass_403.sh`:**
 
 | Verdict | Meaning | Action |
 |---|---|---|
@@ -572,7 +572,7 @@ WAF vendors often return **HTTP 200 OK with a block page** to confuse attackers:
 | AWS | Header: `X-Amzn-Trace-Id: Root=1-<hex-ts>-...` | Timestamp in hex |
 | Generic | Body: `Log ID: WAF-20240512-xxxx` | Include in bug report for triage |
 
-Log IDs extracted by `tools/bypass_403.sh` and `tools/waf_response_analyzer.py --classify`. Include them in reports — triage can verify directly from internal WAF logs.
+Log IDs extracted by `bughunter/tools/bypass_403.sh` and `bughunter/tools/waf_response_analyzer.py --classify`. Include them in reports — triage can verify directly from internal WAF logs.
 
 ### 403 Bypass Quick Reference
 
@@ -648,7 +648,7 @@ Log IDs extracted by `tools/bypass_403.sh` and `tools/waf_response_analyzer.py -
 | SQL operator | `=` | `LIKE` | Avoid `=` token |
 | Base64 XSS | `alert(1)` | `<svg onload=eval(atob('YWxlcnQoMSk='))>` | Bypass keyword filter |
 
-Generate all variants with: `tools/waf_encoder.py "<payload>" --class sqli|xss|generic`
+Generate all variants with: `bughunter/tools/waf_encoder.py "<payload>" --class sqli|xss|generic`
 
 ### Content-Type Confusion
 
@@ -672,7 +672,7 @@ Generate all variants with: `tools/waf_encoder.py "<payload>" --class sqli|xss|g
 | Duplicate `filename=` param | Parser picks first value, scanner sees second |
 | CRLF/LF mix between parts | Strict-CRLF parser breaks, lenient parser continues |
 
-Generate variants with: `tools/multipart_mutator.py --file shell.aspx --field file`
+Generate variants with: `bughunter/tools/multipart_mutator.py --file shell.aspx --field file`
 
 ### Origin Server Discovery (Cloudflare Bypass)
 
@@ -702,9 +702,9 @@ Got 403?
 │   ├── AWS WAF   → /**/ comment split + oversized body
 │   ├── Imperva   → unicode overlong + param pollution
 │   └── F5        → double-slash path + strip TS cookie
-├── Payload blocked? tools/waf_encoder.py "<payload>" --class sqli|xss
+├── Payload blocked? bughunter/tools/waf_encoder.py "<payload>" --class sqli|xss
 │   └── Try each variant until 200 response
-├── Upload endpoint? tools/multipart_mutator.py --file shell --field f
+├── Upload endpoint? bughunter/tools/multipart_mutator.py --file shell --field f
 │   └── Try all 10 parser-confusion variants
 └── 5 min total, still blocked → kill (5-minute rule)
 ```

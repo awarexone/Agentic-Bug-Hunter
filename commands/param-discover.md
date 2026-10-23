@@ -18,7 +18,7 @@ unlocks the real surface.
 
 ## Tools
 
-`tools/param_discovery.sh` prefers `arjun` (richer JSON output, ML-driven diffing) and
+`bughunter/tools/param_discovery.sh` prefers `arjun` (richer JSON output, ML-driven diffing) and
 falls back to `x8` (Rust, faster on huge wordlists). Install hint:
 
 ```

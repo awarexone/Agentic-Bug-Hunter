@@ -24,7 +24,7 @@ A target domain (e.g., `target.com`) and optional flags:
 
 ## Hard safety rails (NON-NEGOTIABLE)
 
-1. **NEVER invoke `/spray` or `tools/spray_orchestrator.sh` without explicit human approval via AskUserQuestion.** This applies even if the user said "go" or "run the whole pipeline" — spray is its own decision point.
+1. **NEVER invoke `/spray` or `bughunter/tools/spray_orchestrator.sh` without explicit human approval via AskUserQuestion.** This applies even if the user said "go" or "run the whole pipeline" — spray is its own decision point.
 2. **NEVER bypass the spray pre-flight (`--i-understand`) on the user's behalf.** Let the orchestrator's typed-hostname confirmation actually run.
 3. **Stage outputs live under `recon/<target>/`** — DO NOT write anywhere else, DO NOT delete previous runs without permission.
 4. **If `/scope <target>` reports out-of-scope, STOP and surface that to the user before any further work.**
@@ -45,7 +45,7 @@ If unreachable or DNS-fail, STOP and report.
 ### Stage 1 — `/wordlist-gen <target>`
 
 ```bash
-tools/wordlist_engine.sh <target> --filter strict --mode balanced
+bughunter/tools/wordlist_engine.sh <target> --filter strict --mode balanced
 ```
 
 Wait for completion. Capture stats from `recon/<target>/wordlists/`:
@@ -58,7 +58,7 @@ If `cleaned.txt` has <100 entries, the target's website is too thin for a useful
 ### Stage 2 — `/osint-employees <target>`
 
 ```bash
-tools/osint_employees.sh <target> [--with-linkedin] [--with-pydictor-social]
+bughunter/tools/osint_employees.sh <target> [--with-linkedin] [--with-pydictor-social]
 ```
 
 Wait. Capture stats from `recon/<target>/osint/`:
@@ -71,7 +71,7 @@ If `usernames.txt` is empty AND `--with-linkedin` was not enabled, surface: "0 u
 ### Stage 3 — `/breach-check` on the ranked wordlist
 
 ```bash
-tools/breach_checker.py recon/<target>/wordlists/ranked.txt \
+bughunter/tools/breach_checker.py recon/<target>/wordlists/ranked.txt \
     --limit <breach-limit> --shuffle --with-counts
 ```
 
@@ -120,7 +120,7 @@ When user picks option 1, hand them the **exact command** to copy-paste, includi
 
 ```bash
 # AGENT NEVER RUNS THIS — only suggests it for user to run
-tools/spray_orchestrator.sh https://<target>/<login-path> \
+bughunter/tools/spray_orchestrator.sh https://<target>/<login-path> \
     --mode http-form \
     --users recon/<target>/osint/usernames.txt \
     --passes recon/<target>/wordlists/ranked-ranked.txt \
@@ -129,7 +129,7 @@ tools/spray_orchestrator.sh https://<target>/<login-path> \
 
 ## What you DO NOT do
 
-- ❌ DO NOT call `tools/spray_orchestrator.sh` yourself, even with `--dry-run`
+- ❌ DO NOT call `bughunter/tools/spray_orchestrator.sh` yourself, even with `--dry-run`
 - ❌ DO NOT bypass `--i-understand` on the user's behalf
 - ❌ DO NOT auto-pick http-form vs oauth vs o365 — ask the user
 - ❌ DO NOT report bugs / write a report — that's a separate skill (`/validate` + `/report`)

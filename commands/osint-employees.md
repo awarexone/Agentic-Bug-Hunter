@@ -64,4 +64,4 @@ Install once: `./install_tools.sh --with-credential-attack`
 
 ## Underlying tool
 
-`tools/osint_employees.sh <target> [flags]` — call directly if you prefer a non-slash interface.
+`bughunter/tools/osint_employees.sh <target> [flags]` — call directly if you prefer a non-slash interface.

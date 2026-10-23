@@ -15,7 +15,7 @@ Find subdomains pointing at services you can claim and serve content from.
 
 ## How it works
 
-`tools/takeover_scanner.sh` tries each strategy in turn:
+`bughunter/tools/takeover_scanner.sh` tries each strategy in turn:
 
 1. **dnsReaper** (`punk-security/dnsReaper`) — broadest fingerprint set, JSON output.
 2. **subjack** (`haccer/subjack`) — fast Go scanner.

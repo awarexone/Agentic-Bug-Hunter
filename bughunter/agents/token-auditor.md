@@ -139,13 +139,13 @@ After manual grep review, run the automated scanner:
 
 ```bash
 # EVM
-python3 tools/token_scanner.py <contract_path>
+python3 bughunter/tools/token_scanner.py <contract_path>
 
 # Solana
-python3 tools/token_scanner.py <program_dir> --chain solana --recursive
+python3 bughunter/tools/token_scanner.py <program_dir> --chain solana --recursive
 
 # With markdown report
-python3 tools/token_scanner.py <path> --recursive --output findings/token-scan.md
+python3 bughunter/tools/token_scanner.py <path> --recursive --output findings/token-scan.md
 ```
 
 ## Reporting Format

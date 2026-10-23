@@ -19,7 +19,7 @@ the `Access-Control-Allow-Origin` / `Access-Control-Allow-Credentials` reply.
 Run directly:
 
 ```bash
-tools/cors_scanner.py https://api.target.com/me --cookie "session=..."
+bughunter/tools/cors_scanner.py https://api.target.com/me --cookie "session=..."
 ```
 
 ## What it tests

@@ -38,7 +38,7 @@ findings/<target-or-program>-<bug-class>/
 └── evidence/                 # screenshots, curl output, response bodies when available
 ```
 
-If `tools/validate.py` already wrote `submission-notes.md`, append/update it
+If `bughunter/tools/validate.py` already wrote `submission-notes.md`, append/update it
 instead of creating a duplicate.
 
 ---

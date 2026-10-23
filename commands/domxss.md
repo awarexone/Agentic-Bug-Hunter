@@ -22,12 +22,12 @@ between "reflected, maybe" and a report-ready `[CONFIRMED]` DOM XSS.
 Run directly:
 
 ```bash
-tools/dom_xss_harness.py "https://app.target.com/search?q=test"
+bughunter/tools/dom_xss_harness.py "https://app.target.com/search?q=test"
 ```
 
 ## Requires
 
-Playwright (a new dependency, registered in `tools/external_arsenal.sh`):
+Playwright (a new dependency, registered in `bughunter/tools/external_arsenal.sh`):
 
 ```bash
 pip install playwright && playwright install chromium

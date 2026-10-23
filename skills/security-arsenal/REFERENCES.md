@@ -55,7 +55,7 @@ GitHub stars list — high-signal repos curated by working bounty hunters.
 | Repo | Use it for |
 |---|---|
 | `EdOverflow/can-i-take-over-xyz` | Authoritative fingerprint + claim-instructions list |
-| `punk-security/dnsReaper` | Best-in-class scanner (already wrapped in `tools/takeover_scanner.sh`) |
+| `punk-security/dnsReaper` | Best-in-class scanner (already wrapped in `bughunter/tools/takeover_scanner.sh`) |
 | `vincentcox/bypass-firewalls-by-DNS-history` | DNS-history origin-IP lookup |
 | `m0rtem/CloudFail` | CloudFlare-specific origin discovery |
 | `spyboy-productions/CloakQuest3r` | CloudFlare/Sucuri origin IP exposure |

@@ -192,16 +192,16 @@ Google Dorks -> JS file download -> Hidden param discovery -> API mapping
 | Live subdomains with tech stack | Phase 2 (Mapping) |
 | Known software (WordPress, Jira) | Check CVEs + defaults immediately |
 | Cloud resources (S3, Firebase) | Test permissions (read/write/list) |
-| 403 **or 200 + block page** on endpoint | `tools/bypass_403.sh <url>` auto-detects soft blocks (200+block-body). Verdict: bypassed/needs_review/blocked. If all blocked after 5 min, skip |
+| 403 **or 200 + block page** on endpoint | `bughunter/tools/bypass_403.sh <url>` auto-detects soft blocks (200+block-body). Verdict: bypassed/needs_review/blocked. If all blocked after 5 min, skip |
 | Nothing after 5 min on a host | Skip, try next host (5-minute rule) |
 
 **Command**: `/recon target.com`
 
 **After every recon (mandatory):**
 ```bash
-python3 tools/lead_board.py ingest target.com
-python3 tools/lead_board.py show target.com
-python3 tools/lead_board.py next target.com
+python3 bughunter/tools/lead_board.py ingest target.com
+python3 bughunter/tools/lead_board.py show target.com
+python3 bughunter/tools/lead_board.py next target.com
 # Route in plain language: "GraphQL endpoint → skills/graphql-audit"
 # touch status when you start / kill / report a lead
 ```
@@ -267,7 +267,7 @@ What input are you testing?
 |--------------|-------------|
 | Low-impact behavior (redirect, self-XSS, cookie injection) | Chain it -- find a connector gadget |
 | Confirmed vuln (XSS, IDOR, SQLi) | Phase 4 (Prove and Escalate) |
-| Blocked by WAF/CSP/403 **or soft-block 200** | `/bypass-403 <url>` → check verdict (not just status) → `tools/waf_encoder.py "<payload>"` → if upload: `tools/multipart_mutator.py` → 5 min, kill |
+| Blocked by WAF/CSP/403 **or soft-block 200** | `/bypass-403 <url>` → check verdict (not just status) → `bughunter/tools/waf_encoder.py "<payload>"` → if upload: `bughunter/tools/multipart_mutator.py` → 5 min, kill |
 | Known software vuln (CVE) | 1-day speed workflow |
 | Nothing after 20 min on this endpoint | Rotate (20-minute rule) |
 
@@ -369,24 +369,24 @@ Every 20 minutes ask yourself: **"Am I making progress?"**
 | Recon: JS | `jsluice` + `mantra` + `trufflehog --only-verified` | Extract URLs/secrets -> find API keys -> verify keys actually work |
 | Recon: Ports | `naabu` (wide) -> `rustscan` (deep) | Fast top-1000 sweep -> full 65535 on interesting targets |
 | Recon: Scan | `nuclei -tags cve` -> `nuclei -tags takeover` | Known CVEs first -> then takeover (act immediately) |
-| **After recon (ALWAYS)** | `python3 tools/lead_board.py ingest <target>` → `show` → `next` | Route every signal to a `hunt-*` skill; never lose a lead. `touch` when you start/kill/report |
-| After recon: EOL | `python3 tools/eol_check.py --tech "php=7.4,nginx=1.18"` | Flag EOL products from `technologies.txt` fingerprints |
-| Mapping: Params | `arjun` + `paramspider` + ParamMiner / `tools/param_discovery.sh` | Brute-force hidden params + mine archives + cache headers |
-| Mapping: GraphQL | `bash tools/graphql_audit.sh <url>` | Introspection → fingerprint → batching → IDOR → injection |
-| Mapping: CI/CD | `bash tools/cicd_scanner.sh owner/repo` | Workflow injection / secret exfil / runner poisoning |
+| **After recon (ALWAYS)** | `python3 bughunter/tools/lead_board.py ingest <target>` → `show` → `next` | Route every signal to a `hunt-*` skill; never lose a lead. `touch` when you start/kill/report |
+| After recon: EOL | `python3 bughunter/tools/eol_check.py --tech "php=7.4,nginx=1.18"` | Flag EOL products from `technologies.txt` fingerprints |
+| Mapping: Params | `arjun` + `paramspider` + ParamMiner / `bughunter/tools/param_discovery.sh` | Brute-force hidden params + mine archives + cache headers |
+| Mapping: GraphQL | `bash bughunter/tools/graphql_audit.sh <url>` | Introspection → fingerprint → batching → IDOR → injection |
+| Mapping: CI/CD | `bash bughunter/tools/cicd_scanner.sh owner/repo` | Workflow injection / secret exfil / runner poisoning |
 | Mapping: JS code | Download -> `jsluice` -> VS Code/Cursor grep | Extract -> static analysis -> AI-assisted taint analysis |
 | Mapping: Dorks | Manual Google Dorks | Custom per-target queries find what automation misses |
 | Discovery: Fuzz | `ffuf -ac` + `cewl` custom wordlist | Auto-calibrate filtering + target-specific words beat generic lists |
 | Discovery: XSS | `kxss` -> `dalfox` | Filter (which params reflect?) -> scan (only reflective params) |
 | Discovery: SQLi | `ghauri` | Modern blind SQLi on ID-like parameters |
 | Discovery: SSRF | `interactsh-client` | Self-hosted OOB listener for blind SSRF/XXE/RCE |
-| Discovery: WAF | `wafw00f` → `tools/bypass_403.sh` → `tools/waf_encoder.py` → `waf_response_analyzer.py` | Fingerprint → soft-block aware bypass → encoded variants → score response |
-| Exploit: 403 | `tools/bypass_403.sh` / `byp4xx` | Soft-block (200+block body) aware; verdict: bypassed/needs_review/blocked |
-| Exploit: Upload | `tools/multipart_mutator.py --file shell --field f` | Parser-confusion multipart variants |
-| Exploit: Takeover | `tools/takeover_scanner.sh` / `subzy` | CNAME against vulnerable services |
-| Exploit: Cloud | `tools/cloud_recon.sh` + `aws` CLI | Scan bucket permissions -> extract metadata credentials |
-| Exploit: Secrets | `tools/secrets_hunter.sh` / `trufflehog --only-verified` | Only verified working keys (no false positives) |
-| Orchestrate | `python3 tools/hunt.py --target T` | Recon → lead ingest → EOL → scan (add `--graphql` / `--cve-hunt` as needed) |
+| Discovery: WAF | `wafw00f` → `bughunter/tools/bypass_403.sh` → `bughunter/tools/waf_encoder.py` → `waf_response_analyzer.py` | Fingerprint → soft-block aware bypass → encoded variants → score response |
+| Exploit: 403 | `bughunter/tools/bypass_403.sh` / `byp4xx` | Soft-block (200+block body) aware; verdict: bypassed/needs_review/blocked |
+| Exploit: Upload | `bughunter/tools/multipart_mutator.py --file shell --field f` | Parser-confusion multipart variants |
+| Exploit: Takeover | `bughunter/tools/takeover_scanner.sh` / `subzy` | CNAME against vulnerable services |
+| Exploit: Cloud | `bughunter/tools/cloud_recon.sh` + `aws` CLI | Scan bucket permissions -> extract metadata credentials |
+| Exploit: Secrets | `bughunter/tools/secrets_hunter.sh` / `trufflehog --only-verified` | Only verified working keys (no false positives) |
+| Orchestrate | `python3 bughunter/tools/hunt.py --target T` | Recon → lead ingest → EOL → scan (add `--graphql` / `--cve-hunt` as needed) |
 
 ### Session End Checklist
 

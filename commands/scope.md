@@ -27,7 +27,7 @@ Always check scope BEFORE the first request.
 Use the local scope checker before sending traffic:
 
 ```bash
-python3 tools/scope_checker.py https://api.target.com/v2/users \
+python3 bughunter/tools/scope_checker.py https://api.target.com/v2/users \
   --domain target.com \
   --domain '*.target.com' \
   --exclude-domain staging.target.com
@@ -36,7 +36,7 @@ python3 tools/scope_checker.py https://api.target.com/v2/users \
 Filter a discovered URL list:
 
 ```bash
-python3 tools/scope_checker.py \
+python3 bughunter/tools/scope_checker.py \
   --domain target.com \
   --domain '*.target.com' \
   --exclude-domain staging.target.com \

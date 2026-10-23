@@ -7,7 +7,7 @@ description: LLM application red-teaming — prompt injection (direct + indirect
 
 > Reflection is not exploitation. A model that *echoes* your payload is noise; a model that *acts* on it — leaks its system prompt, emits your canary, calls a tool, renders raw HTML downstream — is a bug. Prove the action, then chain it to concrete impact.
 
-This is the first-class LLM-attack skill. The scanner behind it is `tools/llm_redteam.py` (canary-based corpus runner, `/llm-redteam`). For auditing an MCP *server*, use `skills/mcp-server-audit`; for attacking a *deployed agent* black-box, use `skills/agentic-app-audit`.
+This is the first-class LLM-attack skill. The scanner behind it is `bughunter/tools/llm_redteam.py` (canary-based corpus runner, `/llm-redteam`). For auditing an MCP *server*, use `skills/mcp-server-audit`; for attacking a *deployed agent* black-box, use `skills/agentic-app-audit`.
 
 ## 0. QUICK KILL CHECKLIST
 
@@ -23,12 +23,12 @@ Kill the lead (classify Informational, move on) when:
 
 | Signal | Run |
 |---|---|
-| Any chat/assistant endpoint | `tools/llm_redteam.py --url <endpoint> --field <json-field>` (full corpus) |
+| Any chat/assistant endpoint | `bughunter/tools/llm_redteam.py --url <endpoint> --field <json-field>` (full corpus) |
 | OpenAI-style API | `--template '{"messages":[{"role":"user","content":"{{PAYLOAD}}"}]}' --response-path choices.0.message.content` |
 | Only want one class | `--category jailbreak` (see `--list-categories`) |
 | Uploads/RAG/"summarize this doc" | indirect-injection + token-smuggling (invisible unicode in the doc) |
 | Agent has tools | excessive-agency category + `skills/agentic-app-audit` |
-| Confirm blind exfil | plant a canary host, correlate with `tools/oob_listener.py` |
+| Confirm blind exfil | plant a canary host, correlate with `bughunter/tools/oob_listener.py` |
 
 ## 2. ATTACK CLASSES (corpus categories)
 
@@ -43,7 +43,7 @@ The runner fires a canary per run (`RT_PWNED_xxxx`); a category "lands" when the
 - **multi-turn-crescendo** — single-shot simulation of a gradual escalation jailbreak.
 - **cross-lingual** — override instruction in another language to dodge English-only filters.
 - **cipher-obfuscation** — leetspeak / ROT13-wrapped instruction.
-- **token-smuggling** — invisible "Sneaky Bits" unicode (U+2062/U+2064) carrying a hidden instruction (shared encoder with `tools/hai_payload_builder.py`).
+- **token-smuggling** — invisible "Sneaky Bits" unicode (U+2062/U+2064) carrying a hidden instruction (shared encoder with `bughunter/tools/hai_payload_builder.py`).
 - **excessive-agency** — coerce an unsafe tool call / exfil (SSRF via "fetch URL", email send, payment).
 - **insecure-output** — get the model to emit raw HTML/script that a downstream sink renders (XSS via AI).
 
@@ -80,6 +80,6 @@ This table is the ONE authoritative ASI mapping for the whole toolkit — `skill
 ## 5. CONFIRMATION DISCIPLINE (no false positives)
 
 - A category only counts when the **canary / real leak / tool-call** is observed in the response — never on "it sounded compliant."
-- For blind exfil, require a correlated out-of-band callback (`tools/oob_listener.py`), not just a rendered beacon tag.
-- For insecure-output XSS, confirm execution at the **downstream sink** with the XSS verifier (`tools/verifiers/xss.py` / `tools/dom_xss_harness.py`), not in the chat reply.
+- For blind exfil, require a correlated out-of-band callback (`bughunter/tools/oob_listener.py`), not just a rendered beacon tag.
+- For insecure-output XSS, confirm execution at the **downstream sink** with the XSS verifier (`tools/verifiers/xss.py` / `bughunter/tools/dom_xss_harness.py`), not in the chat reply.
 - Record the exact payload + response excerpt; the report must be reproducible verbatim.

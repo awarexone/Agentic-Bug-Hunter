@@ -29,9 +29,9 @@ confirmed ones.
 Run directly:
 
 ```bash
-tools/oob_listener.py --payloads cXXXX.oast.fun --json > payloads.json
-tools/oob_listener.py --listen > inter.jsonl
-tools/oob_listener.py --correlate inter.jsonl --payloads-file payloads.json
+bughunter/tools/oob_listener.py --payloads cXXXX.oast.fun --json > payloads.json
+bughunter/tools/oob_listener.py --listen > inter.jsonl
+bughunter/tools/oob_listener.py --correlate inter.jsonl --payloads-file payloads.json
 ```
 
 ## Classes covered

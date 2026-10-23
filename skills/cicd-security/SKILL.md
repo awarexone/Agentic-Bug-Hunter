@@ -30,16 +30,16 @@ description: CI/CD pipeline security hunting — GitHub Actions workflow injecti
 
 ```bash
 # Single repo
-bash tools/cicd_scanner.sh owner/repo
+bash bughunter/tools/cicd_scanner.sh owner/repo
 
 # Org-wide (up to 30 repos)
-bash tools/cicd_scanner.sh "org:orgname" --limit 50 --parallel 5
+bash bughunter/tools/cicd_scanner.sh "org:orgname" --limit 50 --parallel 5
 
 # Scan with recursive reusable workflow analysis
-bash tools/cicd_scanner.sh owner/repo --recursive --depth 5
+bash bughunter/tools/cicd_scanner.sh owner/repo --recursive --depth 5
 
 # Custom output
-bash tools/cicd_scanner.sh owner/repo --output-dir ./findings/target/cicd
+bash bughunter/tools/cicd_scanner.sh owner/repo --output-dir ./findings/target/cicd
 ```
 
 **Output:** `findings/<target>/cicd/scan_results.txt` + `summary.txt`
@@ -369,7 +369,7 @@ CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H (Critical, 10.0)
 | `gitleaks` | Scan repos for hardcoded secrets | `bash install_tools.sh` |
 | `gh` CLI | Download workflow logs, list secrets, trigger runs | `brew install gh` |
 | `nuclei` | CI/CD-specific templates | `-tags cicd` |
-| `secrets_hunter.sh` | Wrapper for all three secret scanners | `bash tools/secrets_hunter.sh` |
+| `secrets_hunter.sh` | Wrapper for all three secret scanners | `bash bughunter/tools/secrets_hunter.sh` |
 
 ```bash
 # Download public workflow run logs (no auth needed)

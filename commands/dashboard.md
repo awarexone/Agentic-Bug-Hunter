@@ -23,11 +23,11 @@ Pure stdlib, zero dependencies. Binds to `127.0.0.1` only.
 Run directly:
 
 ```bash
-tools/hunt_dashboard.py serve --port 8777
-tools/hunt_dashboard.py export -o dashboard.html
+bughunter/tools/hunt_dashboard.py serve --port 8777
+bughunter/tools/hunt_dashboard.py export -o dashboard.html
 ```
 
-> Not to be confused with `tools/dashboard.py`, the in-terminal ANSI progress
+> Not to be confused with `bughunter/tools/dashboard.py`, the in-terminal ANSI progress
 > bar shown *while* a recon/hunt runs. This is the persistent **web view** of
 > everything a hunt has accumulated.
 

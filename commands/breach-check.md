@@ -83,4 +83,4 @@ Pure Python 3.9+, no external deps (uses urllib + hashlib + ThreadPoolExecutor f
 
 ## Underlying tool
 
-`tools/breach_checker.py <wordlist> [flags]` — call directly if you prefer a non-slash interface.
+`bughunter/tools/breach_checker.py <wordlist> [flags]` — call directly if you prefer a non-slash interface.

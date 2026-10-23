@@ -23,11 +23,11 @@ Run directly:
 
 ```bash
 # live: send the request (SSRF-guarded) and bundle it
-tools/poc_bundler.py capture <url> -X GET -H "Cookie: session=..." \
+bughunter/tools/poc_bundler.py capture <url> -X GET -H "Cookie: session=..." \
     --target t.com --vuln-class idor --severity high --finding-id F-12 --screenshot
 
 # offline: bundle a saved raw request (e.g. copied out of Burp)
-tools/poc_bundler.py from-request request.txt --response response.txt \
+bughunter/tools/poc_bundler.py from-request request.txt --response response.txt \
     --target t.com --vuln-class idor
 ```
 
@@ -57,7 +57,7 @@ Pass `--no-redact` only for local/personal use.
 
 ## Safety rails
 
-- `capture` uses the repo's SSRF-guarded opener (`tools/safe_http.py`) — a target
+- `capture` uses the repo's SSRF-guarded opener (`bughunter/tools/safe_http.py`) — a target
   can't 302 the capture into cloud metadata or an internal host.
 - `PUT`/`DELETE`/`PATCH` are refused unless you pass `--confirm-unsafe` (they can
   mutate production state), mirroring the autopilot `SafeMethodPolicy`.

@@ -6,10 +6,10 @@ external dependency is installed — missing tools are skipped, never hard-error
 Full catalogue below. Quick start:
 
 ```bash
-python3 tools/hunt.py --target target.com          # recon → leads → scan → report
-python3 tools/lead_board.py ingest target.com      # after any /recon
-python3 tools/lead_board.py next target.com        # highest-value untouched lead
-bash tools/external_arsenal.sh                     # what's installed vs missing
+python3 bughunter/tools/hunt.py --target target.com          # recon → leads → scan → report
+python3 bughunter/tools/lead_board.py ingest target.com      # after any /recon
+python3 bughunter/tools/lead_board.py next target.com        # highest-value untouched lead
+bash bughunter/tools/external_arsenal.sh                     # what's installed vs missing
 ```
 
 ---
@@ -119,9 +119,9 @@ Scanner confidence states prepended to every finding:
 ## Post-recon ritual (never skip)
 
 ```bash
-python3 tools/lead_board.py ingest target.com
-python3 tools/lead_board.py show target.com
-python3 tools/lead_board.py next target.com
+python3 bughunter/tools/lead_board.py ingest target.com
+python3 bughunter/tools/lead_board.py show target.com
+python3 bughunter/tools/lead_board.py next target.com
 # then route: GraphQL → hunt-graphql /skills/graphql-audit, etc.
 ```
 

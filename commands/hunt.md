@@ -1,5 +1,5 @@
 ---
-description: Active vulnerability hunt against a target by invoking tools/hunt.py (which calls vuln_scanner.sh against recon/<target>/). Auto-runs recon first if no recon dir exists. Usage: /hunt target.com
+description: Active vulnerability hunt against a target by invoking bughunter/tools/hunt.py (which calls vuln_scanner.sh against recon/<target>/). Auto-runs recon first if no recon dir exists. Usage: /hunt target.com
 ---
 
 # /hunt
@@ -10,18 +10,18 @@ Active vulnerability hunting on a target. **Always invoke the production script 
 
 ```bash
 # If recon/<target>/ already exists, scan only:
-python3 tools/hunt.py --target target.com --scan-only
+python3 bughunter/tools/hunt.py --target target.com --scan-only
 
 # If no recon yet, run the full pipeline (recon then scan):
-python3 tools/hunt.py --target target.com
+python3 bughunter/tools/hunt.py --target target.com
 
 # Quick mode (fewer checks, faster):
-python3 tools/hunt.py --target target.com --quick
+python3 bughunter/tools/hunt.py --target target.com --quick
 ```
 
 That's it. The script:
 1. Reads `recon/<target>/` (subdomains, live hosts, URLs, gf-classified candidates).
-2. Runs `tools/vuln_scanner.sh recon/<target>/` — XSS (dalfox), SQLi (linear-scaling verifier), SSTI math-canary probes, race conditions, RCE PoC, MFA/SAML checks.
+2. Runs `bughunter/tools/vuln_scanner.sh recon/<target>/` — XSS (dalfox), SQLi (linear-scaling verifier), SSTI math-canary probes, race conditions, RCE PoC, MFA/SAML checks.
 3. Writes results to `findings/<target>/` with a `summary.txt`.
 
 Output you should see (not a loop):
@@ -54,7 +54,7 @@ bbhunt v4.3
 [✓] HUNT COMPLETE — Summary Dashboard
 ```
 
-Pass `--no-banner` for piped / CI output. Pipe through `python3 tools/dashboard.py --tail --kind scan --target target.com` for a live phase-by-phase progress dashboard instead of streaming logs.
+Pass `--no-banner` for piped / CI output. Pipe through `python3 bughunter/tools/dashboard.py --tail --kind scan --target target.com` for a live phase-by-phase progress dashboard instead of streaming logs.
 
 ## Usage
 
@@ -67,7 +67,7 @@ Pass `--no-banner` for piped / CI output. Pipe through `python3 tools/dashboard.
 /hunt targets.txt                      (multi-target — one domain per line)
 ```
 
-`--vuln-class`, `--source-code`, `--chrome`, and multi-target are manual-mode flags that switch you out of the scripted pipeline and into the methodology below. They are not arguments to `tools/hunt.py`.
+`--vuln-class`, `--source-code`, `--chrome`, and multi-target are manual-mode flags that switch you out of the scripted pipeline and into the methodology below. They are not arguments to `bughunter/tools/hunt.py`.
 
 ## Troubleshooting: "/hunt is looping / not actually hunting"
 
@@ -77,16 +77,16 @@ Cause: The model is reading the methodology prose below and trying to re-impleme
 
 Fix (run this directly in a shell — no prompt needed):
 ```bash
-python3 tools/hunt.py --target target.com --scan-only
+python3 bughunter/tools/hunt.py --target target.com --scan-only
 ```
 
-If `tools/vuln_scanner.sh` reports missing tools, install them first:
+If `bughunter/tools/vuln_scanner.sh` reports missing tools, install them first:
 ```bash
 bash install_tools.sh
 ```
 
 If you're on a free OpenRouter model and the agent keeps narrating instead of executing, add this to your prompt:
-> Run `python3 tools/hunt.py --target target.com --scan-only` and report the output. Do not re-implement the steps. Do not narrate the methodology. Run the command.
+> Run `python3 bughunter/tools/hunt.py --target target.com --scan-only` and report the output. Do not re-implement the steps. Do not narrate the methodology. Run the command.
 
 ## Session Isolation
 
@@ -108,13 +108,13 @@ admin.target.com
 Then loop the script:
 ```bash
 while read -r t; do
-  python3 tools/hunt.py --target "$t" --quick
+  python3 bughunter/tools/hunt.py --target "$t" --quick
 done < targets.txt
 ```
 
 ## Source Code Mode (--source-code)
 
-`tools/hunt.py` does not consume source code directly. For `--source-code`, treat it as a manual workflow:
+`bughunter/tools/hunt.py` does not consume source code directly. For `--source-code`, treat it as a manual workflow:
 
 1. Grep for hardcoded secrets and API keys.
 2. Map routes → controllers; flag endpoints missing auth decorators.
@@ -130,7 +130,7 @@ Requires Chrome MCP configured in Claude Code settings. Enables flows the headle
 - SPA route discovery (React/Vue/Angular)
 - Real file upload and form submission
 
-This is manual; not driven by `tools/hunt.py`.
+This is manual; not driven by `bughunter/tools/hunt.py`.
 
 ---
 
@@ -198,14 +198,14 @@ When any probe returns 403, follow this order before declaring dead-end:
 
 ```bash
 # 1. Header/path/method matrix (auto-runs WAF fingerprint)
-tools/bypass_403.sh "https://$TARGET/blocked-endpoint"
+bughunter/tools/bypass_403.sh "https://$TARGET/blocked-endpoint"
 
 # 2. Payload-level encoding bypass (for SQLi/XSS keyword blocked)
-tools/waf_encoder.py "<payload>" --class sqli
-tools/waf_encoder.py "<payload>" --class xss
+bughunter/tools/waf_encoder.py "<payload>" --class sqli
+bughunter/tools/waf_encoder.py "<payload>" --class xss
 
 # 3. Upload endpoint blocked
-tools/multipart_mutator.py --file ./shell.aspx --field file \
+bughunter/tools/multipart_mutator.py --file ./shell.aspx --field file \
   --url "https://$TARGET/upload" --send
 
 # 4. Cloudflare origin hunt (if Cloudflare detected and steps 1-3 fail)
@@ -336,7 +336,7 @@ When the hunt session ends, run `/remember` to log a summary to hunt memory so `
 Add `--graphql` to audit GraphQL URLs discovered in recon, and `--cve-hunt` for a focused nuclei CVE sweep.
 
 ```bash
-python3 tools/hunt.py --target target.com --graphql --cve-hunt
-python3 tools/lead_board.py next target.com
+python3 bughunter/tools/hunt.py --target target.com --graphql --cve-hunt
+python3 bughunter/tools/lead_board.py next target.com
 ```
 

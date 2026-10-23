@@ -11,14 +11,14 @@ SQLi / SSTI / upload PoC probes — send your auth headers automatically.
 
 ```bash
 # Option A: CLI flags (one-off run)
-python3 tools/hunt.py --target target.com \
+python3 bughunter/tools/hunt.py --target target.com \
     --cookie "session=eyJabc..." \
     --bearer "eyJhbGciOiJIUzI1NiI..."
 
 # Option B: env vars (persists across commands in the shell)
 export BBHUNT_COOKIE="session=eyJabc..."
 export BBHUNT_BEARER="eyJhbGciOiJIUzI1NiI..."
-python3 tools/hunt.py --target target.com
+python3 bughunter/tools/hunt.py --target target.com
 
 # Option C: file (recommended for multi-target hunts)
 cat > .private/target.json <<'JSON'
@@ -27,7 +27,7 @@ cat > .private/target.json <<'JSON'
   "headers": ["X-Org-Id: 42", "X-CSRF-Token: abc"]
 }
 JSON
-python3 tools/hunt.py --target target.com --auth-file .private/target.json
+python3 bughunter/tools/hunt.py --target target.com --auth-file .private/target.json
 ```
 
 The `.private/` directory is gitignored. Use it.
@@ -57,7 +57,7 @@ attack they're checking for. Everything else is gated on the same session.
 
 ## CLI flags
 
-All `tools/hunt.py` runs accept:
+All `bughunter/tools/hunt.py` runs accept:
 
 ```
 --auth-header 'Name: value'   # repeatable
@@ -80,7 +80,7 @@ BBHUNT_API_KEY       # one API key (sent as X-API-Key)
 BBHUNT_AUTH_HEADER   # newline-separated "Name: value" entries (repeatable)
 ```
 
-When `tools/hunt.py` runs, it merges all inputs into a single session and
+When `bughunter/tools/hunt.py` runs, it merges all inputs into a single session and
 exports two derived vars to every subprocess:
 
 ```
@@ -88,11 +88,11 @@ BBHUNT_AUTH_HEADERS  # the merged, deduped header list (newline-separated)
 BBHUNT_SESSION_ID    # sha256(headers)[:12] — short, stable hash
 ```
 
-Bash scripts source `tools/_auth_helper.sh`, which turns these into an array
+Bash scripts source `bughunter/tools/_auth_helper.sh`, which turns these into an array
 they can splat:
 
 ```bash
-. tools/_auth_helper.sh
+. bughunter/tools/_auth_helper.sh
 curl -sk "${BB_AUTH_ARGS[@]}" "$url"
 nuclei -l "$list" "${BB_AUTH_ARGS[@]}" -o "$out"
 ```
@@ -157,8 +157,8 @@ For IDOR / privilege-escalation work, keep two files:
 Run two passes:
 
 ```bash
-python3 tools/hunt.py --target target.com --auth-file .private/user-a.json
-python3 tools/hunt.py --target target.com --auth-file .private/user-b.json
+python3 bughunter/tools/hunt.py --target target.com --auth-file .private/user-a.json
+python3 bughunter/tools/hunt.py --target target.com --auth-file .private/user-b.json
 ```
 
 Audit log entries will carry different `session_id` hashes, so you can diff
@@ -192,5 +192,5 @@ requests.get(url, headers=session.headers_dict())
 import subprocess, os
 env = os.environ.copy()
 session.export_to_env(env)
-subprocess.run(["bash", "tools/recon_engine.sh", target], env=env)
+subprocess.run(["bash", "bughunter/tools/recon_engine.sh", target], env=env)
 ```

@@ -124,17 +124,17 @@ Maps to `.github/ISSUE_TEMPLATE/false_positive.md` (flagged → candidate; why �
 | Hook | Location |
 |---|---|
 | Schema factories | `memory/schemas.py` |
-| Validate persist | `tools/validate.py:write_validation_json` |
+| Validate persist | `bughunter/tools/validate.py:write_validation_json` |
 | Remember | `commands/remember.md` (+ restore thin journal append helper) |
-| Lead lifecycle | `tools/lead_board.py` touch/add/ingest |
+| Lead lifecycle | `bughunter/tools/lead_board.py` touch/add/ingest |
 | FP regressions | `tests/test_false_positives.py` |
-| Rotation / GC | `memory/rotation.py`, `tools/memory_gc.py` |
+| Rotation / GC | `memory/rotation.py`, `bughunter/tools/memory_gc.py` |
 
 ## Migration v1 → v2
 
 - Readers accept schema_version ∈ {1, 2}
 - Writers emit 2
-- Offline: `tools/memory_migrate.py` (or later `bughunter memory migrate`) — copy-forward, never delete hunt-memory
+- Offline: `bughunter/tools/memory_migrate.py` (or later `bughunter memory migrate`) — copy-forward, never delete hunt-memory
 
 ## Non-goals (feature v1)
 

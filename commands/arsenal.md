@@ -15,7 +15,7 @@ Inspect the external tool inventory used by this plugin.
 
 ## What it covers
 
-`tools/external_arsenal.sh` knows about ~50 tools across:
+`bughunter/tools/external_arsenal.sh` knows about ~50 tools across:
 
 - **Recon** — subfinder, amass, assetfinder, bbot, theHarvester, dnsrecon, massdns, puredns, shuffledns, knockpy
 - **Probing** — httpx, dnsx, naabu, smap, aquatone, eyewitness

@@ -69,7 +69,7 @@ SSRF → cloud metadata:          AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:N/SC:H/S
 Stored XSS → ATO:               AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:N/SC:H/SI:H/SA:N = 8.8 High
 ```
 
-Use `python3 tools/validate.py` for interactive CVSS 4.0 scoring, or verify at:
+Use `python3 bughunter/tools/validate.py` for interactive CVSS 4.0 scoring, or verify at:
 https://www.first.org/cvss/calculator/4.0
 
 ## HackerOne Format

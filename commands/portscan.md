@@ -22,14 +22,14 @@ into instant wins.
 Run directly:
 
 ```bash
-tools/port_scanner.py target.com --top 1000
+bughunter/tools/port_scanner.py target.com --top 1000
 ```
 
 ## Tooling
 
 Wraps ProjectDiscovery's **naabu** (fast SYN/CONNECT scan), falling back to
 **smap** (Shodan-backed, sends no packets — handy when active scanning is out of
-scope). Both are registered in `tools/external_arsenal.sh`. If neither is
+scope). Both are registered in `bughunter/tools/external_arsenal.sh`. If neither is
 installed the command prints install hints and exits cleanly.
 
 ## What it flags

@@ -502,7 +502,7 @@ Agentic-Bug-Hunter/
 │   ├── recon_engine.sh        # Subdomain + URL discovery
 │   ├── vuln_scanner.sh        # XSS · SQLi · SSRF · SSTI probe pipeline
 │   ├── validate.py            # 4-gate finding validator with identity checks
-│   └── …                      # 30+ more scanners - see tools/README.md
+│   └── …                      # 30+ more scanners - see bughunter/tools/README.md
 │
 ├── memory/                    # Cross-session hunt memory (pattern DB · audit log)
 ├── rules/                     # Always-active hunting + reporting rules

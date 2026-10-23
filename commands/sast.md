@@ -20,14 +20,14 @@ toolkit's states so findings drop straight into the validation gate.
 Run directly:
 
 ```bash
-tools/sast_scan.py recon/target.com/js/
+bughunter/tools/sast_scan.py recon/target.com/js/
 ```
 
 ## Rulesets
 
 Default packs (Semgrep Registry): `p/security-audit`, `p/secrets`, `p/xss`,
 `p/sql-injection`, `p/command-injection`. Override with `--config`. Registered
-in `tools/external_arsenal.sh` as `semgrep|sast`; if Semgrep isn't installed the
+in `bughunter/tools/external_arsenal.sh` as `semgrep|sast`; if Semgrep isn't installed the
 command prints the install hint and exits cleanly.
 
 ## Severity mapping

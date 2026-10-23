@@ -19,8 +19,8 @@ the auth skill. All crypto is pure stdlib — no network needed to mint a forger
 Run directly:
 
 ```bash
-tools/jwt_scanner.py "$TOKEN" --analyze
-tools/jwt_scanner.py "$TOKEN" --crack --wordlist secrets.txt
+bughunter/tools/jwt_scanner.py "$TOKEN" --analyze
+bughunter/tools/jwt_scanner.py "$TOKEN" --crack --wordlist secrets.txt
 ```
 
 ## Attacks

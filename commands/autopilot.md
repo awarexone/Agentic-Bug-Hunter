@@ -51,9 +51,9 @@ without losing findings.
 
 ```
 1. SCOPE     Load and confirm program scope                       (≡ /scope)
-2. RECON     bash tools/recon_engine.sh <target>                  (≡ /recon, reuses cache if < 7 days old)
+2. RECON     bash bughunter/tools/recon_engine.sh <target>                  (≡ /recon, reuses cache if < 7 days old)
 3. RANK      Prioritize attack surface (recon-ranker agent)       (≡ /surface)
-4. HUNT      python3 tools/hunt.py --target <target> --scan-only  (≡ /hunt)
+4. HUNT      python3 bughunter/tools/hunt.py --target <target> --scan-only  (≡ /hunt)
 5. VALIDATE  7-Question Gate on findings                          (≡ /validate)
 6. REPORT    Draft reports for validated findings                 (≡ /report — never auto-submits)
 7. CHECKPOINT  Present to human for review                        (frequency depends on mode flag)

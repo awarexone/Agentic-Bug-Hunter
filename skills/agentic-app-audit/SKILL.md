@@ -21,7 +21,7 @@ Distinct from its siblings: `skills/llm-redteam` attacks the model's text behavi
 | Signal | Move |
 |---|---|
 | Agent summarizes user-supplied docs/URLs | indirect injection + invisible token-smuggling (`skills/llm-redteam`) |
-| Agent has a "fetch/browse URL" tool | tool-misuse -> SSRF; confirm via `tools/oob_listener.py` |
+| Agent has a "fetch/browse URL" tool | tool-misuse -> SSRF; confirm via `bughunter/tools/oob_listener.py` |
 | Agent has persistent memory / "remember this" | cross-session memory poisoning (plant, switch identity, re-read) |
 | Agent calls downstream tools with your text | confused-deputy / param-to-sink (SSRF/cmd/SQL) |
 | Multi-agent / "assistants talk to each other" | agent-to-agent IDOR (read another agent's context) |

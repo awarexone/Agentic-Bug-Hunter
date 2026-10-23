@@ -26,8 +26,8 @@ at a time, this runs a categorized corpus against a chat endpoint and uses a
 Run directly:
 
 ```bash
-tools/llm_redteam.py --url https://t/api/chat --field message --json
-tools/llm_redteam.py --list-categories
+bughunter/tools/llm_redteam.py --url https://t/api/chat --field message --json
+bughunter/tools/llm_redteam.py --list-categories
 ```
 
 ## Categories (OWASP LLM Top 10 / ASI)

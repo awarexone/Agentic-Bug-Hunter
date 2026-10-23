@@ -19,7 +19,7 @@ via operator injection → auth bypass / data read.
 Run directly:
 
 ```bash
-tools/nosqli_scanner.py --login https://t/api/login \
+bughunter/tools/nosqli_scanner.py --login https://t/api/login \
   --user-field email --pass-field password --json
 ```
 
