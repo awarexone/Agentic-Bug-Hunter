@@ -11,7 +11,7 @@ Provider selection (in order of precedence):
   1. BRAIN_PROVIDER env var  (ollama | claude | openai | grok | groq | deepseek |
                                gemini | kimi | mistral | together | cerebras |
                                perplexity | openrouter | orcarouter | fluxion |
-                               requesty)
+                               requesty | llmtr)
   2. Auto-detect: uses first provider whose API key / server is available
 
 Model selection:
@@ -38,6 +38,7 @@ API keys (env vars):
   REQUESTY_API_KEY    - Requesty (multi-model gateway, anthropic/claude-sonnet-4-6, etc.)
   REQUESTY_BASE_URL   - Requesty base URL (default: https://router.requesty.ai/v1,
                         EU: https://router.eu.requesty.ai/v1)
+  LLMTR_API_KEY       — llmtr (free-tier models + gateway — https://llmtr.com/v1)
   OLLAMA_HOST         — Ollama base URL (default: http://localhost:11434)
 
 Default model priority (uses first available):
@@ -186,7 +187,7 @@ class LLMClient:
     PROVIDER_PRIORITY = [
         "ollama", "groq", "deepseek", "cerebras",
         "gemini", "kimi", "mistral", "together",
-        "perplexity", "orcarouter", "openrouter", "fluxion",
+        "perplexity", "orcarouter", "openrouter", "fluxion", "llmtr",
         "claude", "openai", "grok",
     ]
 
@@ -209,6 +210,7 @@ class LLMClient:
         "orcarouter":  "openai/gpt-4o",
         "fluxion":     "openai/gpt-4o",
         "requesty":    "anthropic/claude-sonnet-4-6",
+        "llmtr":       "minimax/minimax-m3.1-flash-free",
         "litellm":     "gpt-4o",
         "ollama":      None,  # resolved dynamically
     }
@@ -278,6 +280,7 @@ class LLMClient:
         "orcarouter":  "ORCAROUTER_API_KEY",
         "fluxion":     "FLUXION_API_KEY",
         "requesty":    "REQUESTY_API_KEY",
+        "llmtr":       "LLMTR_API_KEY",
         # Kept last so auto-detect only reaches LiteLLM when LITELLM_API_KEY is
         # set, and never preempts a directly-configured provider above.
         "litellm":     "LITELLM_API_KEY",
@@ -526,6 +529,23 @@ class LLMClient:
             self.available   = True
             self.description = "Requesty (multi-model gateway)"
 
+        elif provider == "llmtr":
+            key = os.environ.get("LLMTR_API_KEY", "")
+            if not key:
+                return
+            import requests
+            self._http = requests.Session()
+            # HTTP-Referer + X-Title are optional attribution headers
+            self._http.headers.update({
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/Awarexone/Agentic-Bug-Hunter",
+                "X-Title": "BugHunter",
+            })
+            self._api_base   = "https://llmtr.com/v1"
+            self.available   = True
+            self.description = "llmtr (free-tier models + gateway)"
+
         elif provider == "litellm":
             # LiteLLM routes by the model-name prefix (e.g. "anthropic/claude-...",
             # "gemini/gemini-...", "bedrock/...") and reads each target provider's
@@ -557,7 +577,7 @@ class LLMClient:
             elif self.provider in (
                 "openai", "grok", "groq", "deepseek",
                 "gemini", "kimi", "mistral", "together", "cerebras", "perplexity",
-                "openrouter", "orcarouter", "fluxion", "requesty",
+                "openrouter", "orcarouter", "fluxion", "requesty", "llmtr",
             ):
                 return self._chat_openai_compat(model, system, user, max_tokens, temperature)
         except Exception as e:
@@ -752,6 +772,16 @@ class LLMClient:
                 "gpt-5.4-mini",
                 "gemini-3.5-flash",
                 "gpt-4o-mini@eu",
+            ]
+        elif self.provider == "llmtr":
+            # Curated free-tier starter set; full catalog: GET https://llmtr.com/v1/models
+            return [
+                "minimax/minimax-m3.1-flash-free",
+                "qwen/qwen3.8-27b-free",
+                "internlm/intern-s2-free",
+                "internlm/atria-dawn-free",
+                "nvidia/nemotron-3-super-120b-a12b",
+                "evren/deepseek-v4-flash-tr",
             ]
         elif self.provider == "litellm":
             return self._litellm_list_models()

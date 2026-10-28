@@ -187,6 +187,7 @@ bughunter v "finding"        # short alias for validate
 | **Ollama** | 100% free · runs locally | Full - stays on your machine | Fast | `ollama pull qwen2.5:14b` |
 | **Groq** | Free tier available | Cloud | Very fast | [console.groq.com](https://console.groq.com) → get API key |
 | **DeepSeek** | Very cheap (v4-flash / v4-pro) | Cloud | Fast | [platform.deepseek.com](https://platform.deepseek.com) |
+| **llmtr** | Free tier available | Cloud | Fast | [llmtr.com](https://llmtr.com) → get API key |
 | Claude API | Paid | Cloud | Fast | [console.anthropic.com](https://console.anthropic.com) |
 | OpenAI | Paid | Cloud | Fast | [platform.openai.com](https://platform.openai.com) |
 | **Grok (xAI)** | Paid | Cloud | Fast | [console.x.ai](https://console.x.ai) → `grok-4.5` |
