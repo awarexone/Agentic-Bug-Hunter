@@ -38,7 +38,7 @@ import argparse
 import ipaddress
 import json
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 
 class ScopeError(ValueError):
@@ -122,19 +122,28 @@ def _normalize_and_parse(url: str):
     candidate = url if "://" in url else f"https://{url}"
 
     try:
-        parsed = urlparse(candidate)
+        parsed = urlsplit(candidate)
+        scheme, netloc, path, _, _ = parsed
+        # Preserve urlparse path/parameter separation.
+        if ";" in path:
+            path = urlparse(candidate).path
     except ValueError:
         return None
 
-    scheme = (parsed.scheme or "").lower()
     if scheme not in _ALLOWED_SCHEMES:
         return None
 
-    try:
-        hostname = parsed.hostname
-        port = parsed.port  # raises ValueError on a bad/out-of-range port
-    except ValueError:
-        return None
+    path = path or "/"
+    if ":" not in netloc and "@" not in netloc and "[" not in netloc:
+        # With no authority delimiters, the entire netloc is the host.
+        hostname = netloc
+        port = None
+    else:
+        try:
+            hostname = parsed.hostname
+            port = parsed.port
+        except ValueError:
+            return None
 
     if not hostname:
         return None
@@ -142,7 +151,7 @@ def _normalize_and_parse(url: str):
     host = hostname.lower()
 
     # Normalize a single trailing FQDN root dot: "target.com." == "target.com".
-    if host.endswith("."):
+    if host[-1] == ".":
         host = host[:-1]
     if not host:
         return None
@@ -150,35 +159,35 @@ def _normalize_and_parse(url: str):
     # IPv6 literals contain ":" (urlparse already stripped the [] brackets).
     if ":" in host:
         try:
-            ip = ipaddress.ip_address(host)
+            ip = ipaddress.IPv6Address(host)
         except ValueError:
             return None
-        return ("ip", ip, port, parsed.path or "/", scheme)
+        return ("ip", ip, port, path, scheme)
 
+    # Try IPv4 before allocating the final label.
+    if host[-1].isdecimal():
+        try:
+            ip = ipaddress.IPv4Address(host)
+        except ValueError:
+            if host.rpartition(".")[2].isdecimal():
+                return None
+        else:
+            return ("ip", ip, port, path, scheme)
+
+    last = host.rpartition(".")[2]
     # ASCII-only hostname charset gate (defeats unicode homoglyph lookalikes).
     if not _HOSTNAME_CHARS.match(host):
         return None
 
-    labels = host.split(".")
-    if any(label == "" for label in labels):
+    if not last or host[0] == "." or ".." in host:
         return None  # empty label: leading/trailing/double dot
 
-    # Canonical dotted-quad IPv4.
-    try:
-        ip = ipaddress.ip_address(host)
-        return ("ip", ip, port, parsed.path or "/", scheme)
-    except ValueError:
-        pass
-
-    # Alternate / ambiguous IP encodings: a valid domain never has an
-    # all-numeric or 0x-prefixed rightmost label. Decimal (2130706433),
-    # hex (0x7f000001), octal, and short-form IPs land here. Refuse them
-    # rather than risk any canonicalization confusion -> fail closed.
-    last = labels[-1]
-    if re.fullmatch(r"[0-9]+", last) or last.startswith("0x"):
+    # Hex-prefixed final labels are also ambiguous IP encodings.
+    if last.startswith("0x"):
         return None
 
-    return ("domain", host, port, parsed.path or "/", scheme)
+    return ("domain", host, port, path, scheme)
+
 
 
 def _domain_matches(hostname: str, pattern: str) -> bool:
