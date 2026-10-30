@@ -764,24 +764,29 @@ if command -v dig &>/dev/null && [ -s "$RECON_DIR/subdomains/all.txt" ]; then
     : > "$TAKEOVER_OUT"
     SUB_LIMIT=$([ "$QUICK_MODE" = "--quick" ] && echo 100 || echo 500)
 
-    log_step "Resolving CNAMEs for top $SUB_LIMIT subdomains..."
-    head -"$SUB_LIMIT" "$RECON_DIR/subdomains/all.txt" | while IFS= read -r host; do
-        [ -z "$host" ] && continue
-        cname=$(dig +short "$host" CNAME 2>/dev/null | head -1)
-        [ -z "$cname" ] && continue
-        # Match common claimable-service CNAME suffixes (extend list as needed)
-        case "$cname" in
-            *github.io.*|*herokuapp.com.*|*herokussl.com.*|\
-            *s3.amazonaws.com.*|*s3-website*.amazonaws.com.*|\
-            *azurewebsites.net.*|*cloudapp.net.*|*trafficmanager.net.*|\
-            *shopify.com.*|*myshopify.com.*|\
-            *wordpress.com.*|*ghost.io.*|*tumblr.com.*|\
-            *pantheonsite.io.*|*surge.sh.*|*netlify.app.*|*vercel.app.*|\
-            *zendesk.com.*|*helpjuice.com.*|*helpscout.net.*|*statuspage.io.*|\
-            *fastly.net.*|*readme.io.*|*intercom.help.*)
-                echo "$host  CNAME→ $cname" >> "$TAKEOVER_OUT" ;;
-        esac
-    done
+    # Parallel dig with per-query timeouts. Serial dig across hundreds of
+    # hosts can stall the recon pipeline for a long time when resolvers hang.
+    # Override concurrency with BB_TAKEOVER_PARALLEL (default 20).
+    log_step "Resolving CNAMEs for top $SUB_LIMIT subdomains (parallel ${BB_TAKEOVER_PARALLEL:-20}, dig +time=2)..."
+    # Note: dig's +time/+tries bound each lookup; do not rely on an outer
+    # shell timeout() inside the xargs child (it may not be inherited).
+    head -"$SUB_LIMIT" "$RECON_DIR/subdomains/all.txt" \
+        | xargs -P "${BB_TAKEOVER_PARALLEL:-20}" -I{} sh -c '
+            cname=$(dig +short +time=2 +tries=1 "{}" CNAME 2>/dev/null | head -1)
+            [ -z "$cname" ] && exit 0
+            # Match common claimable-service CNAME suffixes (extend list as needed)
+            case "$cname" in
+                *github.io.*|*herokuapp.com.*|*herokussl.com.*|\
+                *s3.amazonaws.com.*|*s3-website*.amazonaws.com.*|\
+                *azurewebsites.net.*|*cloudapp.net.*|*trafficmanager.net.*|\
+                *shopify.com.*|*myshopify.com.*|\
+                *wordpress.com.*|*ghost.io.*|*tumblr.com.*|\
+                *pantheonsite.io.*|*surge.sh.*|*netlify.app.*|*vercel.app.*|\
+                *zendesk.com.*|*helpjuice.com.*|*helpscout.net.*|*statuspage.io.*|\
+                *fastly.net.*|*readme.io.*|*intercom.help.*)
+                    echo "{}  CNAME→ $cname" ;;
+            esac
+        ' >> "$TAKEOVER_OUT" 2>/dev/null || true
 
     n=$(wc -l < "$TAKEOVER_OUT" | tr -d ' ')
     if [ "$n" -gt 0 ]; then
