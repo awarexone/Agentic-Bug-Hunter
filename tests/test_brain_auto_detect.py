@@ -20,7 +20,7 @@ def brain_module(monkeypatch):
     for env in (
         "BRAIN_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY",
         "OPENROUTER_API_KEY", "ORCAROUTER_API_KEY", "FLUXION_API_KEY",
-        "REQUESTY_API_KEY", "REQUESTY_BASE_URL",
+        "REQUESTY_API_KEY", "REQUESTY_BASE_URL", "RUNCRATE_API_KEY",
     ):
         monkeypatch.delenv(env, raising=False)
     import brain
@@ -245,3 +245,71 @@ def test_requesty_base_url_override(brain_module, monkeypatch):
 
 def test_requesty_is_opt_in_only(brain_module):
     assert "requesty" not in brain_module.LLMClient.PROVIDER_PRIORITY
+
+
+def test_runcrate_key_jumps_to_front(brain_module, monkeypatch):
+    monkeypatch.setenv("RUNCRATE_API_KEY", "rc-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    tracker = _Tracker(available_provider="runcrate")
+    tracker.bind(client)
+
+    chosen = brain_module.LLMClient._auto_detect(client)
+
+    assert chosen == "runcrate"
+    assert tracker.calls[0] == "runcrate"
+
+
+def test_runcrate_init_sets_api_base_and_headers(brain_module, monkeypatch):
+    monkeypatch.setenv("RUNCRATE_API_KEY", "rc-test")
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._ollama = None
+    client._http = None
+    client.description = ""
+    client.provider = "runcrate"
+
+    brain_module.LLMClient._init_provider(client, "runcrate")
+
+    assert client.available is True
+    assert client._api_base == "https://api.runcrate.ai/v1"
+    assert client._http.headers["Authorization"] == "Bearer rc-test"
+    assert "runcrate" in client.description.lower()
+    assert brain_module.LLMClient.DEFAULT_MODELS["runcrate"] == "Qwen/Qwen3-235B-A22B-Instruct-2507"
+    assert "Qwen/Qwen3-235B-A22B-Instruct-2507" in brain_module.LLMClient.list_models(client)
+
+
+def test_runcrate_without_key_stays_unavailable(brain_module):
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = False
+    client._ollama = None
+    client._http = None
+    client.description = ""
+
+    brain_module.LLMClient._init_provider(client, "runcrate")
+
+    assert client.available is False
+
+
+def test_runcrate_is_opt_in_only(brain_module):
+    assert "runcrate" not in brain_module.LLMClient.PROVIDER_PRIORITY
+    assert brain_module.LLMClient.PROVIDER_KEY_ENV["runcrate"] == "RUNCRATE_API_KEY"
+
+
+def test_runcrate_chat_uses_openai_compatible_path(brain_module):
+    client = brain_module.LLMClient.__new__(brain_module.LLMClient)
+    client.available = True
+    client.provider = "runcrate"
+    client.model = None
+    seen = {}
+
+    def fake_chat(model, system, user, max_tokens, temperature):
+        seen["model"] = model
+        return "ok"
+
+    client._chat_openai_compat = fake_chat
+
+    reply = brain_module.LLMClient.chat(client, "Qwen/Qwen3-235B-A22B-Instruct-2507", "sys", "hi")
+
+    assert reply == "ok"
+    assert seen["model"] == "Qwen/Qwen3-235B-A22B-Instruct-2507"

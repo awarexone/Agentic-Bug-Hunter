@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Runcrate provider** (`runcrate`) for standalone `bughunter` / `brain.py`: Runcrate is an AI cloud with an OpenAI-compatible API at `https://api.runcrate.ai/v1`, used via `RUNCRATE_API_KEY` with open models (default `Qwen/Qwen3-235B-A22B-Instruct-2507`). Not in the auto-detect priority list; choose option 12 in `bughunter setup`, `BRAIN_PROVIDER=runcrate`, or `--provider runcrate`.
 - **Requesty provider** (`requesty`) for standalone `bughunter` / `brain.py`: OpenAI-compatible gateway at `https://router.requesty.ai/v1` via `REQUESTY_API_KEY` (optional `REQUESTY_BASE_URL`, e.g. `https://router.eu.requesty.ai/v1` for the EU region). Not in the auto-detect priority list; choose option 11 in `bughunter setup`, `BRAIN_PROVIDER=requesty`, or `--provider requesty`. Default model `anthropic/claude-sonnet-4-6` and a short curated model list (same pattern as OpenRouter).
 - **Fluxion AI provider** (`fluxion`) for standalone `bughunter` / `brain.py` — optional OpenAI-compatible gateway at `https://fluxionai.world/v1` via `FLUXION_API_KEY`. Not the default; choose option 9 in `bughunter setup`, `BRAIN_PROVIDER=fluxion`, or `--provider fluxion`. README partner placement + setup docs link [docs](https://docs.fluxionai.world/user-guide/help-center) and [Model Plaza](https://fluxionai.world/model-plaza).
 - **Claude Code plugin manifest** (`.claude-plugin/plugin.json`) — declares skills, commands, agents, and hooks so the repo passes Claude Code / marketplace plugin validation.
