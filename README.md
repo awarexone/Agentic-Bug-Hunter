@@ -194,6 +194,7 @@ bughunter v "finding"        # short alias for validate
 | **OrcaRouter** | Subscription / pay-as-you-go | Cloud | Fast | [orcarouter.ai](https://www.orcarouter.ai) → get API key |
 | **LiteLLM** | Uses your existing provider keys | Cloud / self-hosted proxy | Fast | [docs.litellm.ai](https://docs.litellm.ai) → one gateway for 100+ models |
 | **Requesty** | Pay-as-you-go | Cloud | Fast | [app.requesty.ai/api-keys](https://app.requesty.ai/api-keys) → get API key · [docs](https://docs.requesty.ai) |
+| **Runcrate** | Pay-as-you-go | Cloud | Fast | [runcrate.ai](https://www.runcrate.ai) → get API key · [docs](https://www.runcrate.ai/docs) · open models over an OpenAI-compatible API |
 
 BugHunter auto-detects providers in this order: **Ollama → Groq → DeepSeek → … → OrcaRouter → OpenRouter → Claude → OpenAI**. LiteLLM is opt-in (selected explicitly or when `LITELLM_API_KEY` is set) so it never preempts a provider you already configured. Requesty is opt-in the same way (selected explicitly or when `REQUESTY_API_KEY` is set); set `REQUESTY_BASE_URL=https://router.eu.requesty.ai/v1` to route through the EU region.
 
