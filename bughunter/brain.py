@@ -199,7 +199,9 @@ class LLMClient:
         # (2026-08-16) and now 404s; gpt-oss-20b is a current production model.
         "groq":        "openai/gpt-oss-20b",
         "deepseek":    "deepseek-v4-flash",
-        "gemini":      "gemini-2.0-flash",
+        "gemini":      "gemini-4-argon-high",
+        "gemini-oauth": "gemini-4-argon-high",
+        "antigravity": "gemini-4-argon-high",
         "kimi":        "moonshot-v1-128k",
         "mistral":     "mistral-large-latest",
         "together":    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
@@ -388,15 +390,21 @@ class LLMClient:
 
         elif provider == "gemini":
             key = os.environ.get("GEMINI_API_KEY", "")
-            if not key:
+            if key:
+                import requests
+                self._http = requests.Session()
+                self._http.headers.update({"Authorization": f"Bearer {key}",
+                                           "Content-Type": "application/json"})
+                self._api_base   = "https://generativelanguage.googleapis.com/v1beta/openai"
+                self._gemini_auth_mode = "api_key"
+                self.available   = True
+                self.description = "Google Gemini API"
                 return
-            import requests
-            self._http = requests.Session()
-            self._http.headers.update({"Authorization": f"Bearer {key}",
-                                       "Content-Type": "application/json"})
-            self._api_base   = "https://generativelanguage.googleapis.com/v1beta/openai"
-            self.available   = True
-            self.description = "Google Gemini API (gemini-2.0-flash / gemini-2.5-pro)"
+            # Unified Google OAuth / Antigravity (Gemini AI Pro)
+            self._init_antigravity_oauth()
+
+        elif provider in ("antigravity", "agy", "gemini-oauth", "google-oauth"):
+            self._init_antigravity_oauth()
 
         elif provider == "kimi":
             key = os.environ.get("MOONSHOT_API_KEY", "")
@@ -541,6 +549,25 @@ class LLMClient:
             self.available   = True
             self.description = "LiteLLM (100+ provider gateway)"
 
+    def _init_antigravity_oauth(self) -> None:
+        """Initialize unified Google Antigravity / Gemini AI Pro (Google OAuth) backend."""
+        try:
+            from tools.google_oauth import find_agy_binary, load_oauth_credentials
+            agy_bin = find_agy_binary()
+            creds = load_oauth_credentials()
+            if agy_bin:
+                self._agy_bin = agy_bin
+                self._gemini_auth_mode = "oauth"
+                self.available = True
+                email = (creds or {}).get("email")
+                acct = f"{email} — Gemini AI Pro" if email else "Google OAuth / Gemini AI Pro"
+                self.description = f"Google Antigravity / Gemini ({acct})"
+        except Exception as e:
+            print(
+                f"{YELLOW}[Brain] Antigravity/Gemini OAuth init failed: {e}{NC}",
+                file=sys.stderr,
+            )
+
     def chat(self, model: str | None, system: str, user: str,
              max_tokens: int = 4000, temperature: float = 0.1) -> str:
         """Send a chat request; return the assistant reply as a string."""
@@ -554,6 +581,12 @@ class LLMClient:
                 return self._chat_claude(model, system, user, max_tokens, temperature)
             elif self.provider == "litellm":
                 return self._chat_litellm(model, system, user, max_tokens, temperature)
+            elif self.provider in ("antigravity", "agy"):
+                return self._chat_antigravity(model, system, user, max_tokens, temperature)
+            elif self.provider in ("gemini-oauth", "google-oauth") or (
+                self.provider == "gemini" and getattr(self, "_gemini_auth_mode", "") == "oauth"
+            ):
+                return self._chat_gemini_oauth(model, system, user, max_tokens, temperature)
             elif self.provider in (
                 "openai", "grok", "groq", "deepseek",
                 "gemini", "kimi", "mistral", "together", "cerebras", "perplexity",
@@ -625,6 +658,26 @@ class LLMClient:
         resp = litellm.completion(**kwargs)
         return (resp.choices[0].message.content or "").strip()
 
+    def _chat_gemini_oauth(self, model, system, user, max_tokens, temperature) -> str:
+        from tools.google_oauth import chat_antigravity_oauth
+        return chat_antigravity_oauth(
+            model or self.DEFAULT_MODELS["antigravity"],
+            system,
+            user,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+    def _chat_antigravity(self, model, system, user, max_tokens, temperature) -> str:
+        from tools.google_oauth import chat_antigravity_oauth
+        return chat_antigravity_oauth(
+            model or self.DEFAULT_MODELS["antigravity"],
+            system,
+            user,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
     def _deepseek_model_and_thinking(self, model: str) -> tuple[str, dict]:
         """Resolve a DeepSeek model name and pin its thinking mode explicitly.
 
@@ -694,8 +747,12 @@ class LLMClient:
                     "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
         elif self.provider == "deepseek":
             return ["deepseek-v4-flash", "deepseek-v4-pro"]
+        elif self.provider in ("antigravity", "agy", "gemini-oauth", "google-oauth"):
+            return self._antigravity_list_models()
         elif self.provider == "gemini":
-            return ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+            if getattr(self, "_gemini_auth_mode", "") == "api_key":
+                return ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]
+            return self._antigravity_list_models()
         elif self.provider == "kimi":
             return ["moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k"]
         elif self.provider == "mistral":
@@ -756,6 +813,11 @@ class LLMClient:
         elif self.provider == "litellm":
             return self._litellm_list_models()
         return []
+
+    def _antigravity_list_models(self) -> list[str]:
+        """List models from `agy models` or fallback to standard Antigravity catalog."""
+        from tools.google_oauth import list_antigravity_models
+        return list_antigravity_models(getattr(self, "_agy_bin", None))
 
     def _litellm_list_models(self) -> list[str]:
         """Discover LiteLLM models dynamically (no hardcoded list).
