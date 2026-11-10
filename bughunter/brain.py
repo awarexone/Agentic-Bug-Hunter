@@ -199,9 +199,9 @@ class LLMClient:
         # (2026-08-16) and now 404s; gpt-oss-20b is a current production model.
         "groq":        "openai/gpt-oss-20b",
         "deepseek":    "deepseek-v4-flash",
-        "gemini":      "gemini-4-argon-high",
-        "gemini-oauth": "gemini-4-argon-high",
-        "antigravity": "gemini-4-argon-high",
+        "gemini":      "gemini-3.8-flash-high",
+        "gemini-oauth": "gemini-3.8-flash-high",
+        "antigravity": "gemini-3.8-flash-high",
         "kimi":        "moonshot-v1-128k",
         "mistral":     "mistral-large-latest",
         "together":    "meta-llama/Llama-3.3-70B-Instruct-Turbo",

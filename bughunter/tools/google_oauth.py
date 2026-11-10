@@ -68,7 +68,7 @@ SIGN_IN_FAILURE_URL = "https://developers.google.com/gemini-code-assist/auth_fai
 BUGHUNTER_OAUTH_FILE = Path.home() / ".bughunter" / "google_oauth.json"
 GEMINI_CLI_OAUTH_FILE = Path.home() / ".gemini" / "oauth_creds.json"
 
-# Current Antigravity / Gemini AI Pro model catalog (ID -> Human-readable label)
+# Current Antigravity / Gemini AI Pro & Plus model catalog (ID -> Human-readable label)
 ANTIGRAVITY_MODEL_LABELS: dict[str, str] = {
     "gemini-4-argon-high":      "Gemini 4 Argon (High)",
     "gemini-4-argon-medium":    "Gemini 4 Argon (Medium)",
@@ -82,12 +82,14 @@ ANTIGRAVITY_MODEL_LABELS: dict[str, str] = {
     "claude-sonnet-5-5-high":   "Claude Sonnet 5.5 (High)",
     "claude-sonnet-5-5-medium": "Claude Sonnet 5.5 (Medium)",
     "claude-sonnet-5-5-low":    "Claude Sonnet 5.5 (Low)",
+    "claude-sonnet-4-6":        "Claude Sonnet 4.6 (Thinking)",
+    "claude-opus-4-6-thinking": "Claude Opus 4.6 (Thinking)",
     "gpt-oss-120b-medium":      "GPT-OSS 120B (Medium)",
 }
 
 DEFAULT_ANTIGRAVITY_MODELS = list(ANTIGRAVITY_MODEL_LABELS.keys())
 
-# Map legacy Gemini model names onto current Antigravity / Gemini AI Pro models
+# Map legacy Gemini model names onto current Antigravity models
 LEGACY_MODEL_MAP: dict[str, str] = {
     "gemini-2.5-pro":         "gemini-4-argon-high",
     "gemini-3-pro-preview":   "gemini-4-argon-high",
@@ -126,8 +128,8 @@ def list_antigravity_models(agy_bin: str | None = None) -> list[str]:
             timeout=15,
         )
         models: list[str] = []
-        for raw_line in proc.stdout.splitlines():
-            clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]|\r", "", raw_line).strip()
+        for raw_line in re.split(r"[\r\n]+", proc.stdout):
+            clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", raw_line).strip()
             if not clean or "Fetching available models" in clean:
                 continue
             parts = clean.split()
@@ -136,12 +138,9 @@ def list_antigravity_models(agy_bin: str | None = None) -> list[str]:
                 label = " ".join(parts[1:]).strip()
                 if label:
                     ANTIGRAVITY_MODEL_LABELS[model_id] = label
-                models.append(model_id)
+                if model_id not in models:
+                    models.append(model_id)
         if models:
-            # Prefer Gemini 4 Argon (High) first if present
-            if "gemini-4-argon-high" in models:
-                models.remove("gemini-4-argon-high")
-                models.insert(0, "gemini-4-argon-high")
             return models
     except Exception:
         pass
