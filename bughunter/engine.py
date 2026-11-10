@@ -273,7 +273,7 @@ def cmd_setup(args):
         "9":  ("fluxion",    "Fluxion    (multi-model)       — needs FLUXION_API_KEY"),
         "10": ("litellm",     "LiteLLM     (100+ providers)    — uses per-provider keys or LITELLM_API_KEY"),
         "11": ("requesty",    "Requesty    (multi-model)       — needs REQUESTY_API_KEY"),
-        "12": ("antigravity", "Antigravity / Gemini (Google OAuth — Gemini AI Pro)"),
+        "12": ("antigravity", "Antigravity / Gemini (Google OAuth — Gemini AI)"),
     }
 
     requested_provider = (
@@ -327,7 +327,7 @@ def cmd_setup(args):
         creds = get_valid_credentials()
         if creds and creds.get("access_token"):
             email = creds.get("email") or "Google Account"
-            ok(f"Google OAuth session active: {email} (Gemini AI Pro)")
+            ok(f"Google OAuth session active: {email}")
             if not requested_provider and sys.stdin.isatty():
                 relogin = input("Login with another Google account? (y/N): ").strip().lower()
                 if relogin.startswith("y"):
@@ -410,7 +410,7 @@ def cmd_setup(args):
                 if current:
                     current = resolve_antigravity_model(current)
                 default_index = models.index(current) + 1 if current in models else 1
-                print("\nChoose the Antigravity / Gemini AI Pro model BugHunter should use:\n")
+                print("\nChoose the Antigravity / Gemini model BugHunter should use:\n")
                 for index, model_name in enumerate(models, start=1):
                     label = ANTIGRAVITY_MODEL_LABELS.get(model_name, "")
                     label_str = f" — {label}" if label else ""

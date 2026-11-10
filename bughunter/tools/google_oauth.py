@@ -68,22 +68,22 @@ SIGN_IN_FAILURE_URL = "https://developers.google.com/gemini-code-assist/auth_fai
 BUGHUNTER_OAUTH_FILE = Path.home() / ".bughunter" / "google_oauth.json"
 GEMINI_CLI_OAUTH_FILE = Path.home() / ".gemini" / "oauth_creds.json"
 
-# Current Antigravity / Gemini AI Pro & Plus model catalog (ID -> Human-readable label)
+# Current Antigravity / Gemini AI (Plus & Pro) model catalog (ID -> Human-readable label)
 ANTIGRAVITY_MODEL_LABELS: dict[str, str] = {
-    "gemini-4-argon-high":      "Gemini 4 Argon (High)",
-    "gemini-4-argon-medium":    "Gemini 4 Argon (Medium)",
-    "gemini-4-argon-low":       "Gemini 4 Argon (Low)",
+    "claude-sonnet-4-6":        "Claude Sonnet 4.6 (Thinking)",
+    "claude-opus-4-6-thinking": "Claude Opus 4.6 (Thinking)",
     "gemini-3.8-flash-high":    "Gemini 3.8 Flash (High)",
     "gemini-3.8-flash-medium":  "Gemini 3.8 Flash (Medium)",
     "gemini-3.8-flash-low":     "Gemini 3.8 Flash (Low)",
-    "claude-opus-5-5-high":     "Claude Opus 5.5 (High)",
-    "claude-opus-5-5-medium":   "Claude Opus 5.5 (Medium)",
-    "claude-opus-5-5-low":      "Claude Opus 5.5 (Low)",
-    "claude-sonnet-5-5-high":   "Claude Sonnet 5.5 (High)",
     "claude-sonnet-5-5-medium": "Claude Sonnet 5.5 (Medium)",
+    "claude-sonnet-5-5-high":   "Claude Sonnet 5.5 (High)",
     "claude-sonnet-5-5-low":    "Claude Sonnet 5.5 (Low)",
-    "claude-sonnet-4-6":        "Claude Sonnet 4.6 (Thinking)",
-    "claude-opus-4-6-thinking": "Claude Opus 4.6 (Thinking)",
+    "claude-opus-5-5-medium":   "Claude Opus 5.5 (Medium)",
+    "claude-opus-5-5-high":     "Claude Opus 5.5 (High)",
+    "claude-opus-5-5-low":      "Claude Opus 5.5 (Low)",
+    "gemini-4-argon-high":      "Gemini 4 Argon (High)",
+    "gemini-4-argon-medium":    "Gemini 4 Argon (Medium)",
+    "gemini-4-argon-low":       "Gemini 4 Argon (Low)",
     "gpt-oss-120b-medium":      "GPT-OSS 120B (Medium)",
 }
 
@@ -118,33 +118,37 @@ def find_agy_binary() -> str | None:
 def list_antigravity_models(agy_bin: str | None = None) -> list[str]:
     """Query `agy models` for live models or fall back to DEFAULT_ANTIGRAVITY_MODELS."""
     agy_bin = agy_bin or find_agy_binary()
-    if not agy_bin:
-        return list(DEFAULT_ANTIGRAVITY_MODELS)
-    try:
-        proc = subprocess.run(
-            [agy_bin, "models"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        models: list[str] = []
-        for raw_line in re.split(r"[\r\n]+", proc.stdout):
-            clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", raw_line).strip()
-            if not clean or "Fetching available models" in clean:
-                continue
-            parts = clean.split()
-            if parts and re.match(r"^[a-z0-9][a-z0-9._-]+$", parts[0]):
-                model_id = parts[0]
-                label = " ".join(parts[1:]).strip()
-                if label:
-                    ANTIGRAVITY_MODEL_LABELS[model_id] = label
-                if model_id not in models:
-                    models.append(model_id)
-        if models:
-            return models
-    except Exception:
-        pass
-    return list(DEFAULT_ANTIGRAVITY_MODELS)
+    models: list[str] = []
+    if agy_bin:
+        try:
+            workspace_dir = Path.home() / ".bughunter" / "workspace"
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+            proc = subprocess.run(
+                [agy_bin, "models"],
+                cwd=str(workspace_dir),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            for raw_line in re.split(r"[\r\n]+", proc.stdout):
+                clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", raw_line).strip()
+                if not clean or "Fetching available models" in clean:
+                    continue
+                parts = clean.split()
+                if parts and re.match(r"^[a-z0-9][a-z0-9._-]+$", parts[0]):
+                    model_id = parts[0]
+                    label = " ".join(parts[1:]).strip()
+                    if label:
+                        ANTIGRAVITY_MODEL_LABELS[model_id] = label
+                    if model_id not in models:
+                        models.append(model_id)
+        except Exception:
+            pass
+
+    if not models:
+        models = list(DEFAULT_ANTIGRAVITY_MODELS)
+
+    return models
 
 
 def _generate_pkce_pair() -> tuple[str, str]:

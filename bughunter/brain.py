@@ -560,7 +560,7 @@ class LLMClient:
                 self._gemini_auth_mode = "oauth"
                 self.available = True
                 email = (creds or {}).get("email")
-                acct = f"{email} — Gemini AI Pro" if email else "Google OAuth / Gemini AI Pro"
+                acct = f"{email}" if email else "Google OAuth (Gemini AI)"
                 self.description = f"Google Antigravity / Gemini ({acct})"
         except Exception as e:
             print(
