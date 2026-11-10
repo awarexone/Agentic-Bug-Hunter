@@ -17,9 +17,11 @@ import json
 import os
 import re
 import secrets
+import select
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -432,7 +434,6 @@ def interactive_google_oauth_login(no_browser: bool = False, timeout: int = 300)
             if time.time() - start_time > timeout:
                 break
             if sys.stdin.isatty():
-                import select
                 r, _, _ = select.select([sys.stdin], [], [], 0.5)
                 if r:
                     user_input = sys.stdin.readline().strip()
