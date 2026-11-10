@@ -60,7 +60,6 @@ OAUTH_SCOPES = [
 AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo"
-MANUAL_REDIRECT_URI = "https://codeassist.google.com/authcode"
 SIGN_IN_SUCCESS_URL = "https://developers.google.com/gemini-code-assist/auth_success_gemini"
 SIGN_IN_FAILURE_URL = "https://developers.google.com/gemini-code-assist/auth_failure_gemini"
 
@@ -317,108 +316,33 @@ def _open_browser_url(url: str) -> bool:
         return False
 
 
+def _extract_code_from_input(user_input: str) -> str:
+    s = user_input.strip()
+    if "code=" in s:
+        parsed = urllib.parse.urlparse(s)
+        qs = urllib.parse.parse_qs(parsed.query or parsed.path)
+        if "code" in qs:
+            return qs["code"][0]
+        parts = s.split("code=", 1)[-1].split("&", 1)[0]
+        return urllib.parse.unquote(parts)
+    return s
+
+
 def interactive_google_oauth_login(no_browser: bool = False, timeout: int = 300) -> dict[str, Any]:
     """
     Run interactive Google OAuth 2.0 login flow for Antigravity / Gemini AI Pro.
-    Uses local loopback callback server by default, or manual copy-paste code flow
-    if no_browser=True.
+    Uses local loopback callback server by default, and seamlessly accepts redirected
+    URL or authorization code if browser cannot connect to 127.0.0.1.
     """
     verifier, challenge = _generate_pkce_pair()
     state = secrets.token_hex(24)
 
-    if not no_browser and not os.environ.get("NO_BROWSER"):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-        sock.close()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
 
-        redirect_uri = f"http://127.0.0.1:{port}/oauth2callback"
-        params = {
-            "client_id": OAUTH_CLIENT_ID,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": " ".join(OAUTH_SCOPES),
-            "access_type": "offline",
-            "prompt": "consent",
-            "state": state,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-        }
-        auth_url = f"{AUTH_ENDPOINT}?{urllib.parse.urlencode(params)}"
-
-        result_holder: dict[str, Any] = {}
-        done_event = threading.Event()
-
-        class _CallbackHandler(http.server.BaseHTTPRequestHandler):
-            def log_message(self, format: str, *args: Any) -> None:
-                pass
-
-            def do_GET(self) -> None:
-                parsed = urllib.parse.urlparse(self.path)
-                if parsed.path != "/oauth2callback":
-                    self.send_response(302)
-                    self.send_header("Location", SIGN_IN_FAILURE_URL)
-                    self.end_headers()
-                    return
-
-                qs = urllib.parse.parse_qs(parsed.query)
-                if "error" in qs:
-                    result_holder["error"] = qs["error"][0]
-                    self.send_response(302)
-                    self.send_header("Location", SIGN_IN_FAILURE_URL)
-                    self.end_headers()
-                    done_event.set()
-                    return
-
-                if qs.get("state", [""])[0] != state:
-                    result_holder["error"] = "OAuth state mismatch"
-                    self.send_response(400)
-                    self.end_headers()
-                    self.wfile.write(b"State mismatch.")
-                    done_event.set()
-                    return
-
-                code = qs.get("code", [""])[0]
-                if not code:
-                    result_holder["error"] = "No authorization code received"
-                    self.send_response(302)
-                    self.send_header("Location", SIGN_IN_FAILURE_URL)
-                    self.end_headers()
-                    done_event.set()
-                    return
-
-                result_holder["code"] = code
-                self.send_response(302)
-                self.send_header("Location", SIGN_IN_SUCCESS_URL)
-                self.end_headers()
-                done_event.set()
-
-        server = http.server.HTTPServer(("127.0.0.1", port), _CallbackHandler)
-        srv_thread = threading.Thread(target=server.serve_forever, daemon=True)
-        srv_thread.start()
-
-        print("\n[*] Opening Google OAuth login in your browser...")
-        print("    If the browser does not open automatically, visit this URL:\n")
-        print(f"    {auth_url}\n")
-        _open_browser_url(auth_url)
-        print("[*] Waiting for Google authentication callback (Ctrl+C to switch to manual code entry)...")
-
-        try:
-            finished = done_event.wait(timeout=timeout)
-        except KeyboardInterrupt:
-            finished = False
-            print("\n[*] Switched to manual authorization code mode.")
-        finally:
-            server.shutdown()
-            server.server_close()
-
-        if finished and "code" in result_holder:
-            code = result_holder["code"]
-            return _exchange_code_for_credentials(code, redirect_uri, verifier)
-        elif finished and "error" in result_holder:
-            raise RuntimeError(f"Google OAuth failed: {result_holder['error']}")
-
-    redirect_uri = MANUAL_REDIRECT_URI
+    redirect_uri = f"http://127.0.0.1:{port}/oauth2callback"
     params = {
         "client_id": OAUTH_CLIENT_ID,
         "redirect_uri": redirect_uri,
@@ -431,14 +355,108 @@ def interactive_google_oauth_login(no_browser: bool = False, timeout: int = 300)
         "code_challenge_method": "S256",
     }
     auth_url = f"{AUTH_ENDPOINT}?{urllib.parse.urlencode(params)}"
-    print("\n[*] Manual Google OAuth Login:")
-    print("    1. Open this URL in any browser and sign in with your Google (Gemini AI Pro) account:\n")
+
+    result_holder: dict[str, Any] = {}
+    done_event = threading.Event()
+
+    class _CallbackHandler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path not in ("/oauth2callback", "/auth/callback"):
+                self.send_response(302)
+                self.send_header("Location", SIGN_IN_FAILURE_URL)
+                self.end_headers()
+                return
+
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "error" in qs:
+                result_holder["error"] = qs["error"][0]
+                self.send_response(302)
+                self.send_header("Location", SIGN_IN_FAILURE_URL)
+                self.end_headers()
+                done_event.set()
+                return
+
+            if qs.get("state", [""])[0] != state:
+                result_holder["error"] = "OAuth state mismatch"
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b"State mismatch.")
+                done_event.set()
+                return
+
+            code = qs.get("code", [""])[0]
+            if not code:
+                result_holder["error"] = "No authorization code received"
+                self.send_response(302)
+                self.send_header("Location", SIGN_IN_FAILURE_URL)
+                self.end_headers()
+                done_event.set()
+                return
+
+            result_holder["code"] = code
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(
+                b"<html><body style='font-family:sans-serif;text-align:center;padding:50px;'>"
+                b"<h2>Authentication successful!</h2>"
+                b"<p>You can close this tab and return to BugHunter.</p>"
+                b"</body></html>"
+            )
+            done_event.set()
+
+    server = http.server.HTTPServer(("127.0.0.1", port), _CallbackHandler)
+    srv_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    srv_thread.start()
+
+    print("\n[*] Google OAuth Login (Gemini AI Pro):")
+    print("    1. Sign in with your Google account using this URL:\n")
     print(f"       {auth_url}\n")
-    print("    2. Copy the authorization code shown on screen and paste it below.")
-    code = input("\nEnter Google authorization code: ").strip()
-    if not code:
-        raise RuntimeError("Authorization code is required.")
-    return _exchange_code_for_credentials(code, redirect_uri, verifier)
+
+    if not no_browser and not os.environ.get("NO_BROWSER"):
+        _open_browser_url(auth_url)
+        print("    Browser opened. Waiting for Google authentication callback...")
+    else:
+        print("    Waiting for Google authentication callback...")
+
+    print("    (If running on remote/headless machine, paste redirected URL or code below)\n")
+
+    user_input = ""
+    start_time = time.time()
+    try:
+        while not done_event.is_set():
+            if time.time() - start_time > timeout:
+                break
+            if sys.stdin.isatty():
+                import select
+                r, _, _ = select.select([sys.stdin], [], [], 0.5)
+                if r:
+                    user_input = sys.stdin.readline().strip()
+                    break
+            else:
+                done_event.wait(timeout=timeout)
+                break
+    except KeyboardInterrupt:
+        print("\n[*] Interrupted.")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    if done_event.is_set() and "code" in result_holder:
+        return _exchange_code_for_credentials(result_holder["code"], redirect_uri, verifier)
+    elif done_event.is_set() and "error" in result_holder:
+        raise RuntimeError(f"Google OAuth failed: {result_holder['error']}")
+
+    if user_input:
+        code = _extract_code_from_input(user_input)
+        if code:
+            return _exchange_code_for_credentials(code, redirect_uri, verifier)
+
+    raise RuntimeError("OAuth timeout or no authorization code received.")
 
 
 def _exchange_code_for_credentials(
