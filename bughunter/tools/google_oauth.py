@@ -515,8 +515,12 @@ def chat_antigravity_oauth(
     if resolved_model:
         cmd.extend(["--model", resolved_model])
 
+    workspace_dir = Path.home() / ".bughunter" / "workspace"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
     proc = subprocess.run(
         cmd,
+        cwd=str(workspace_dir),
         capture_output=True,
         text=True,
         timeout=180,
