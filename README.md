@@ -863,8 +863,14 @@ git push origin feature/your-contribution
           <br/><sub><b>kevinaimonster</b></sub>
         </a>
       </td>
+      <td align="center" width="110">
+        <a href="https://github.com/cxnbhnq-a">
+          <img src="https://github.com/cxnbhnq-a.png?size=128" width="64" height="64" alt="cxnbhnq-a"/>
+          <br/><sub><b>cxnbhnq-a</b></sub>
+        </a>
+      </td>
     </tr>
-</table>
+  </table>
 
 <p align="center">
   <a href="https://github.com/Awarexone/Agentic-Bug-Hunter/graphs/contributors"><img src="https://img.shields.io/github/contributors/Awarexone/Agentic-Bug-Hunter?style=for-the-badge&color=7F55FF&label=contributors" alt="Contributors"/></a>
