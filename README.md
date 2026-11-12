@@ -162,11 +162,12 @@ To uninstall the standalone command while keeping its configuration:
 ```
 
 Use `--purge-config` to also delete `~/.bughunter/config.json`. The uninstaller
-also supports `claude`, `opencode`, `pi`, `codex`, `agents`, and `all` targets.
+also supports `claude`, `antigravity`, `opencode`, `pi`, `codex`, `agents`, and `all` targets.
 
 ```
 bughunter help               # show every command
 bughunter setup              # choose your AI provider (Ollama is free + offline)
+bughunter login              # login with Google OAuth (Antigravity / Gemini AI Pro — no API key)
 bughunter recon target.com   # map the attack surface
 bughunter hunt  target.com   # hunt for vulnerabilities
 bughunter validate "finding" # 7-Question Gate on your finding
@@ -185,6 +186,7 @@ bughunter v "finding"        # short alias for validate
 | Provider | Cost | Privacy | Speed | Get Started |
 |:---|:---|:---|:---|:---|
 | **Ollama** | 100% free · runs locally | Full - stays on your machine | Fast | `ollama pull qwen2.5:14b` |
+| **Antigravity / Gemini** | Included with Gemini AI Pro (Google OAuth — no API key) | Cloud | Fast | `bughunter login` → `gemini-4-argon-high` / `claude-opus-5-5-high` |
 | **Groq** | Free tier available | Cloud | Very fast | [console.groq.com](https://console.groq.com) → get API key |
 | **DeepSeek** | Very cheap (v4-flash / v4-pro) | Cloud | Fast | [platform.deepseek.com](https://platform.deepseek.com) |
 | Claude API | Paid | Cloud | Fast | [console.anthropic.com](https://console.anthropic.com) |
@@ -587,6 +589,7 @@ chmod +x install.sh && ./install.sh
 **Other agent harnesses:**
 
 ```bash
+./install.sh --agent antigravity # Google Antigravity / Gemini (~/.gemini/config)
 ./install.sh --agent opencode    # OpenCode
 ./install.sh --agent pi          # Pi Agent
 ./install.sh --agent codex       # Codex

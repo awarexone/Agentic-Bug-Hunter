@@ -35,7 +35,7 @@ MCP_SRC="$(resolve_src "mcp" "mcp" "bughunter/mcp")" || true
 
 usage() {
     cat <<'EOF'
-Usage: ./install.sh [--agent claude|opencode|pi|codex|agents|standalone|mcp|all] [--global|--project]
+Usage: ./install.sh [--agent claude|antigravity|gemini|opencode|pi|codex|agents|standalone|mcp|all] [--global|--project]
 
 Defaults:
   ./install.sh                    Install for Claude Code globally
@@ -46,14 +46,16 @@ Standalone (no subscription needed):
                                   After install, type from anywhere:
                                     bughunter help
                                     bughunter setup
+                                    bughunter login
                                     bughunter recon target.com
                                     bughunter h target.com
 
 Examples:
-  ./install.sh --agent opencode   Install OpenCode skills + commands globally
-  ./install.sh --agent pi         Install Pi skills + prompt templates globally
-  ./install.sh --agent agents     Install shared Agent Skills to ~/.agents/skills
-  ./install.sh --agent all        Install every supported global target
+  ./install.sh --agent antigravity Install Antigravity / Gemini skills, rules & agents globally (~/.gemini/config)
+  ./install.sh --agent opencode    Install OpenCode skills + commands globally
+  ./install.sh --agent pi          Install Pi skills + prompt templates globally
+  ./install.sh --agent agents      Install shared Agent Skills to ~/.agents/skills
+  ./install.sh --agent all         Install every supported global target
   ./install.sh --agent opencode --project
                                   Install into .opencode/ for this repo
 
@@ -268,6 +270,29 @@ install_agents() {
     echo "OpenCode and Pi both discover .agents/skills or ~/.agents/skills."
 }
 
+install_antigravity() {
+    local root
+    if [ "$SCOPE" = "project" ]; then
+        root=".agents"
+    else
+        root="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/config}"
+    fi
+
+    echo "Installing Agentic Bug Hunter for Google Antigravity / Gemini ($SCOPE)..."
+    copy_tree_items "skills/*" "$root/skills" "skill"
+    copy_files "commands/*.md" "$root/commands" "command"
+    copy_files "$AGENTS_SRC/*.md" "$root/agents" "agent"
+    copy_files "rules/hunting.md" "$root/rules" "rule"
+    copy_files "rules/reporting.md" "$root/rules" "rule"
+    echo "Done: $root"
+    echo ""
+    echo "Antigravity discovers skills & rules in ~/.gemini/config (global) or .agents/ (project)."
+    echo "Start hunting with Antigravity / Gemini AI Pro:"
+    echo "  agy"
+    echo "  bughunter setup --provider antigravity"
+    echo "  bughunter login"
+}
+
 install_standalone() {
     echo ""
     echo "════════════════════════════════════════════════════"
@@ -437,9 +462,14 @@ case "$AGENT" in
         SETUP_BURP="no"
         install_agents
         ;;
+    antigravity|gemini|agy)
+        SETUP_BURP="no"
+        install_antigravity
+        ;;
     all)
         SETUP_BURP="no"
         install_claude
+        install_antigravity
         install_opencode
         install_pi
         install_codex

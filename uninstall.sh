@@ -59,7 +59,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$AGENT" in
-    claude|opencode|claude-opencode|pi|codex|agents|generic|standalone|engine|all) ;;
+    claude|antigravity|gemini|agy|opencode|claude-opencode|pi|codex|agents|generic|standalone|engine|all) ;;
     *)
         echo "Unsupported agent: $AGENT" >&2
         usage >&2
@@ -164,6 +164,20 @@ uninstall_agents() {
     remove_tree_items "$SCRIPT_DIR/skills/*" "$root/skills" "shared skill"
 }
 
+uninstall_antigravity() {
+    local root
+    if [ "$SCOPE" = "project" ]; then
+        root="$SCRIPT_DIR/.agents"
+    else
+        root="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/config}"
+    fi
+    remove_tree_items "$SCRIPT_DIR/skills/*" "$root/skills" "Antigravity skill"
+    remove_files "$SCRIPT_DIR/commands/*.md" "$root/commands" "Antigravity command"
+    remove_files "$SCRIPT_DIR/bughunter/agents/*.md" "$root/agents" "Antigravity agent"
+    remove_path "$root/rules/hunting.md" "Antigravity rule"
+    remove_path "$root/rules/reporting.md" "Antigravity rule"
+}
+
 is_managed_bughunter() {
     local path="$1"
     if [ -L "$path" ]; then
@@ -231,9 +245,11 @@ case "$AGENT" in
     pi) uninstall_pi ;;
     codex) uninstall_codex ;;
     agents|generic) uninstall_agents ;;
+    antigravity|gemini|agy) uninstall_antigravity ;;
     standalone|engine) uninstall_standalone ;;
     all)
         uninstall_claude
+        uninstall_antigravity
         uninstall_opencode
         uninstall_pi
         uninstall_codex

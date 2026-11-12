@@ -129,6 +129,7 @@ def save_config(cfg: dict):
 
 COMMAND_ALIASES = {
     "setup": {"setup", "init"},
+    "login": {"login", "auth"},
     "providers": {"providers", "p"},
     "models": {"models", "m"},
     "status": {"status", "s"},
@@ -270,8 +271,9 @@ def cmd_setup(args):
         "7":  ("openrouter", "OpenRouter (multi-model)       — needs OPENROUTER_API_KEY"),
         "8":  ("orcarouter", "OrcaRouter (multi-model)       — needs ORCAROUTER_API_KEY"),
         "9":  ("fluxion",    "Fluxion    (multi-model)       — needs FLUXION_API_KEY"),
-        "10": ("litellm",    "LiteLLM    (100+ providers)    — uses per-provider keys or LITELLM_API_KEY"),
-        "11": ("requesty",   "Requesty   (multi-model)       - needs REQUESTY_API_KEY"),
+        "10": ("litellm",     "LiteLLM     (100+ providers)    — uses per-provider keys or LITELLM_API_KEY"),
+        "11": ("requesty",    "Requesty    (multi-model)       — needs REQUESTY_API_KEY"),
+        "12": ("antigravity", "Antigravity / Gemini (Google OAuth — Gemini AI)"),
     }
 
     requested_provider = (
@@ -284,11 +286,14 @@ def cmd_setup(args):
     else:
         print("Choose your AI backend:\n")
         for k, (_, desc) in providers.items():
-            print(f"  {k}) {desc}")
+            print(f"  {k:>2}) {desc}")
         print()
 
         choice = input("Enter number [1]: ").strip() or "1"
         provider = providers.get(choice, ("ollama", ""))[0]
+
+    if provider in ("gemini", "gemini-oauth", "google-oauth", "agy") and not os.environ.get("GEMINI_API_KEY"):
+        provider = "antigravity"
 
     requested_model = (
         getattr(args, "setup_model", None)
@@ -308,9 +313,38 @@ def cmd_setup(args):
         "orcarouter": "ORCAROUTER_API_KEY",
         "fluxion":    "FLUXION_API_KEY",
         "requesty":   "REQUESTY_API_KEY",
+        "gemini":     "GEMINI_API_KEY",
     }
 
-    if provider in env_map:
+    if provider == "antigravity":
+        sys.path.insert(0, str(HERE))
+        from tools.google_oauth import (
+            ANTIGRAVITY_MODEL_LABELS,
+            get_valid_credentials,
+            interactive_google_oauth_login,
+            resolve_antigravity_model,
+        )
+        creds = get_valid_credentials()
+        if creds and creds.get("access_token"):
+            email = creds.get("email") or "Google Account"
+            ok(f"Google OAuth session active: {email}")
+            if not requested_provider and sys.stdin.isatty():
+                relogin = input("Login with another Google account? (y/N): ").strip().lower()
+                if relogin.startswith("y"):
+                    no_browser = input("Use manual authorization code instead of browser? (y/N): ").strip().lower().startswith("y")
+                    creds = interactive_google_oauth_login(no_browser=no_browser)
+                    ok(f"Google OAuth login successful: {creds.get('email', 'authenticated')}")
+        elif not requested_provider and sys.stdin.isatty():
+            do_oauth = input("Sign in with Google OAuth in browser now? (Y/n): ").strip().lower()
+            if not do_oauth.startswith("n"):
+                no_browser = input("Use manual copy-paste code instead of opening browser? (y/N): ").strip().lower().startswith("y")
+                try:
+                    creds = interactive_google_oauth_login(no_browser=no_browser)
+                    ok(f"Google OAuth login successful: {creds.get('email', 'authenticated')}")
+                except Exception as exc:
+                    warn(f"Browser OAuth skipped ({exc}) — using active Antigravity CLI session")
+
+    elif provider in env_map:
         env_var = env_map[provider]
         existing = os.environ.get(env_var, "")
         print(f"\nEnter {env_var} (blank = keep existing): ", end="")
@@ -366,7 +400,37 @@ def cmd_setup(args):
                 ok(f"Selected model: {selected_model}")
             else:
                 warn("No local Ollama models found — pull one, then run setup again")
+        elif provider == "antigravity" and not requested_model and sys.stdin.isatty():
+            sys.path.insert(0, str(HERE))
+            from tools.google_oauth import ANTIGRAVITY_MODEL_LABELS, resolve_antigravity_model
+            models = client.list_models()
+            if models:
+                saved_models = cfg.get("models", {})
+                current = saved_models.get(provider) if isinstance(saved_models, dict) else None
+                if current:
+                    current = resolve_antigravity_model(current)
+                default_index = models.index(current) + 1 if current in models else 1
+                print("\nChoose the Antigravity / Gemini model BugHunter should use:\n")
+                for index, model_name in enumerate(models, start=1):
+                    label = ANTIGRAVITY_MODEL_LABELS.get(model_name, "")
+                    label_str = f" — {label}" if label else ""
+                    marker = " (current)" if model_name == current else ""
+                    print(f"  {index:>2}) {model_name:<25}{label_str}{marker}")
+                choice = input(f"\nEnter number [{default_index}]: ").strip()
+                try:
+                    selected_model = models[int(choice or default_index) - 1]
+                except (ValueError, IndexError):
+                    selected_model = models[default_index - 1]
+                if not isinstance(cfg.get("models"), dict):
+                    cfg["models"] = {}
+                cfg.setdefault("models", {})[provider] = selected_model
+                os.environ["BRAIN_MODEL"] = selected_model
+                ok(f"Selected model: {selected_model}")
         elif requested_model:
+            if provider == "antigravity":
+                sys.path.insert(0, str(HERE))
+                from tools.google_oauth import resolve_antigravity_model
+                requested_model = resolve_antigravity_model(requested_model)
             if not isinstance(cfg.get("models"), dict):
                 cfg["models"] = {}
             cfg.setdefault("models", {})[provider] = requested_model
@@ -394,39 +458,115 @@ def cmd_setup(args):
             print(f"\n  {YELLOW}Set API key:{NC}  export {env_map[provider]}=your_key_here")
 
 
+def cmd_login(args):
+    """Google OAuth 2.0 login / status / logout for Gemini AI Pro."""
+    header("Google OAuth — Gemini AI Pro")
+    sys.path.insert(0, str(HERE))
+    from tools.google_oauth import (
+        BUGHUNTER_OAUTH_FILE,
+        clear_oauth_credentials,
+        get_valid_credentials,
+        interactive_google_oauth_login,
+    )
+
+    if getattr(args, "logout", False):
+        if clear_oauth_credentials():
+            ok(f"Removed saved Google OAuth credentials ({BUGHUNTER_OAUTH_FILE})")
+        else:
+            info("No saved Google OAuth credentials to remove.")
+        return
+
+    if getattr(args, "status", False):
+        creds = get_valid_credentials()
+        if creds and creds.get("access_token"):
+            email = creds.get("email") or "authenticated"
+            tier = creds.get("user_tier_name") or creds.get("user_tier") or "Gemini AI Pro"
+            proj = creds.get("project_id") or "auto"
+            ok(f"Google OAuth active: {email}")
+            info(f"Tier: {tier} | Project: {proj}")
+            info(f"Credentials file: {creds.get('_source_path', BUGHUNTER_OAUTH_FILE)}")
+        else:
+            warn("Not logged in with Google OAuth. Run: bughunter login")
+        return
+
+    no_browser = bool(getattr(args, "no_browser", False))
+    try:
+        creds = interactive_google_oauth_login(no_browser=no_browser)
+    except Exception as exc:
+        err(f"Google OAuth login failed: {exc}")
+        sys.exit(1)
+
+    email = creds.get("email") or "Google Account"
+    tier = creds.get("user_tier_name") or creds.get("user_tier") or "Gemini AI Pro (Antigravity)"
+    ok(f"Logged in as: {email} ({tier})")
+    ok(f"Credentials saved to: {BUGHUNTER_OAUTH_FILE}")
+
+    cfg = load_config()
+    cfg["provider"] = "antigravity"
+    cfg.setdefault("models", {})["antigravity"] = (
+        getattr(args, "model", None) or cfg.get("models", {}).get("antigravity") or "gemini-4-argon-high"
+    )
+    save_config(cfg)
+    ok(f"Active provider set to 'antigravity' (model: {cfg['models']['antigravity']})")
+
+
 def cmd_providers(args):
     """Show all providers and API key status."""
+    import shutil
     _, LLMClient = _import_brain()
     cfg = load_config()
     saved = cfg.get("provider", "")
+    if saved in ("gemini", "gemini-oauth", "google-oauth", "agy") and not os.environ.get("GEMINI_API_KEY"):
+        saved = "antigravity"
+
+    sys.path.insert(0, str(HERE))
+    try:
+        from tools.google_oauth import load_oauth_credentials
+        oauth_creds = load_oauth_credentials()
+    except Exception:
+        oauth_creds = None
 
     env_map = {
-        "ollama":     None,
-        "groq":       "GROQ_API_KEY",
-        "deepseek":   "DEEPSEEK_API_KEY",
-        "claude":     "ANTHROPIC_API_KEY",
-        "openai":     "OPENAI_API_KEY",
-        "grok":       "XAI_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-        "orcarouter": "ORCAROUTER_API_KEY",
-        "fluxion":    "FLUXION_API_KEY",
-        "requesty":   "REQUESTY_API_KEY",
+        "ollama":       None,
+        "antigravity":  None,
+        "groq":         "GROQ_API_KEY",
+        "deepseek":     "DEEPSEEK_API_KEY",
+        "claude":       "ANTHROPIC_API_KEY",
+        "openai":       "OPENAI_API_KEY",
+        "grok":         "XAI_API_KEY",
+        "openrouter":   "OPENROUTER_API_KEY",
+        "orcarouter":   "ORCAROUTER_API_KEY",
+        "fluxion":      "FLUXION_API_KEY",
+        "requesty":     "REQUESTY_API_KEY",
     }
     tier = {
-        "ollama": "FREE (local)", "groq": "FREE tier",
-        "deepseek": "cheap",      "claude": "paid",
-        "openai": "paid",         "grok": "paid",
-        "openrouter": "subscription",
-        "orcarouter": "subscription",
-        "fluxion": "subscription",
-        "requesty": "pay-as-you-go",
+        "ollama":       "FREE (local)",
+        "antigravity":  "Gemini AI Pro",
+        "groq":         "FREE tier",
+        "deepseek":     "cheap",
+        "claude":       "paid",
+        "openai":       "paid",
+        "grok":         "paid",
+        "openrouter":   "subscription",
+        "orcarouter":   "subscription",
+        "fluxion":      "subscription",
+        "requesty":     "pay-as-you-go",
     }
 
-    print(f"\n  {'PROVIDER':<12} {'TIER':<16} {'STATUS':<20} {'NOTE'}")
-    print(f"  {'─'*12} {'─'*16} {'─'*20} {'─'*30}")
+    print(f"\n  {'PROVIDER':<14} {'TIER':<16} {'STATUS':<22} {'NOTE'}")
+    print(f"  {'─'*14} {'─'*16} {'─'*22} {'─'*30}")
 
     for prov, env_var in env_map.items():
-        if env_var:
+        if prov == "antigravity":
+            agy_bin = os.environ.get("AGY_BIN") or shutil.which("agy") or str(Path.home() / ".local" / "bin" / "agy")
+            email = (oauth_creds or {}).get("email")
+            if agy_bin and os.path.isfile(agy_bin) and os.access(agy_bin, os.X_OK):
+                status = f"{GREEN}OAuth ready{NC}"
+                note = f"{email} (Google OAuth)" if email else "Google OAuth / agy"
+            else:
+                status = f"{RED}not installed{NC}"
+                note = "install Antigravity CLI"
+        elif env_var:
             key_set = bool(os.environ.get(env_var) or cfg.get(env_var))
             status  = f"{GREEN}key set{NC}" if key_set else f"{RED}no key{NC}"
             note    = env_var if not key_set else ""
@@ -441,7 +581,7 @@ def cmd_providers(args):
                 note   = "ollama serve"
 
         marker = f" {BOLD}<- active{NC}" if prov == saved else ""
-        print(f"  {BOLD}{prov:<12}{NC} {tier[prov]:<16} {status:<30} {DIM}{note}{NC}{marker}")
+        print(f"  {BOLD}{prov:<14}{NC} {tier[prov]:<16} {status:<32} {DIM}{note}{NC}{marker}")
 
     print(f"\n  Config: {CONFIG}")
     print(f"  Change: ./engine.py setup\n")
@@ -459,9 +599,16 @@ def cmd_models(args):
     info(f"Provider: {client.description}")
     selected = _configured_model(cfg, client.provider)
     if models:
+        sys.path.insert(0, str(HERE))
+        try:
+            from tools.google_oauth import ANTIGRAVITY_MODEL_LABELS
+        except Exception:
+            ANTIGRAVITY_MODEL_LABELS = {}
         for m in models:
+            label = ANTIGRAVITY_MODEL_LABELS.get(m, "")
+            label_str = f" — {DIM}{label}{NC}" if label else ""
             marker = f" {BOLD}<- selected{NC}" if m == selected else ""
-            print(f"  {GREEN}•{NC} {m}{marker}")
+            print(f"  {GREEN}•{NC} {m:<25}{label_str}{marker}")
     else:
         warn("No models found")
         if client.provider == "ollama":
@@ -795,7 +942,7 @@ def main():
         """),
     )
     parser.add_argument("--provider", "-p",
-                        help="Force provider: ollama / groq / deepseek / claude / openai / grok / openrouter / orcarouter / fluxion / litellm / requesty")
+                        help="Force provider: ollama / gemini-oauth / antigravity / gemini / groq / deepseek / claude / openai / grok / openrouter / orcarouter / fluxion / litellm / requesty")
     parser.add_argument("--model", "-m", help="Force model for this invocation (for example qwen3:14b)")
     parser.add_argument("--no-banner", action="store_true", help="Suppress banner")
 
@@ -805,13 +952,19 @@ def main():
     p_setup.add_argument(
         "--provider", dest="setup_provider",
         choices=["ollama", "groq", "deepseek", "claude", "openai", "grok",
-                 "openrouter", "orcarouter", "fluxion", "litellm", "requesty"],
+                 "openrouter", "orcarouter", "fluxion", "litellm", "requesty",
+                 "gemini", "gemini-oauth", "google-oauth", "antigravity", "agy"],
         help="Provider to persist (skips the provider prompt)",
     )
     p_setup.add_argument(
         "--model", dest="setup_model",
         help="Model to persist; an Ollama model must already be installed",
     )
+
+    p_login = sub.add_parser("login", aliases=["auth"], help="Login with Google OAuth (Gemini AI Pro)")
+    p_login.add_argument("--no-browser", action="store_true", help="Use manual copy-paste authorization code instead of opening browser")
+    p_login.add_argument("--status", action="store_true", help="Check current Google OAuth login status")
+    p_login.add_argument("--logout", action="store_true", help="Remove saved Google OAuth credentials")
     sub.add_parser("providers", aliases=["p"], help="Show all providers + API key status")
     sub.add_parser("models",    aliases=["m"], help="List available models for active provider")
     sub.add_parser("status",    aliases=["s"], help="Show hunt pipeline status")
@@ -858,16 +1011,19 @@ def main():
     cfg = load_config()
     for env_var in ("GROQ_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY",
                     "OPENAI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY",
-                    "ORCAROUTER_API_KEY", "FLUXION_API_KEY", "REQUESTY_API_KEY"):
+                    "ORCAROUTER_API_KEY", "FLUXION_API_KEY", "REQUESTY_API_KEY",
+                    "GEMINI_API_KEY"):
         if not os.environ.get(env_var) and cfg.get(env_var):
             os.environ[env_var] = cfg[env_var]
 
-    quiet_cmds = {"status", "providers", "models", "mcp", None}
+    quiet_cmds = {"status", "providers", "models", "mcp", "login", "auth", None}
     if not getattr(args, "no_banner", False) and args.command not in quiet_cmds:
         _print_banner()
 
     dispatch = {
         "setup":     cmd_setup,
+        "login":     cmd_login,
+        "auth":      cmd_login,
         "providers": cmd_providers,
         "models":    cmd_models,
         "recon":     cmd_recon,
