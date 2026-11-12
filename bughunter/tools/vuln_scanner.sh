@@ -377,21 +377,31 @@ if ! skip_has ssti; then
     if [ -s "$PARAMS_FILE" ]; then
         # Removed associative array for Bash 3.2 compatibility
         # engines: jinja2, freemarker, thymeleaf, erb
+        # Use a unique math canary instead of 7*7→49. Matching "\b49\b" false-
+        # positives on normal page content (CSS, durations, IDs). Also require
+        # the canary to be absent from a baseline (uninjected) response so
+        # reflected-but-unevaluated payloads are not treated as confirmed SSTI.
         SSTI_ENGINES=("jinja2" "freemarker" "thymeleaf" "erb")
-        SSTI_PAYLOADS=("{{7*7}}" "\${7*7}" "*{7*7}" "<%= 7*7 %>")
-        
+        SSTI_PAYLOADS=("{{739391*739391}}" "\${739391*739391}" "*{739391*739391}" "<%= 739391*739391 %>")
+        SSTI_CANARY="546699042881"
+
         SSTI_LIMIT=$([ "$QUICK_MODE" = "--quick" ] && echo 20 || echo 50)
-        log_step "Testing SSTI payloads on up to $SSTI_LIMIT URLs..."
+        log_step "Testing SSTI payloads on up to $SSTI_LIMIT URLs (canary $SSTI_CANARY + baseline)..."
         hit=0
         while IFS= read -r url; do
             [ -z "$url" ] && continue
+            baseline=$(curl -sk --max-time 10 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$url" 2>/dev/null || true)
+            if echo "$baseline" | grep -q "$SSTI_CANARY"; then
+                log_step "Baseline already contains canary — skipping: $url"
+                continue
+            fi
             for idx in "${!SSTI_ENGINES[@]}"; do
                 engine="${SSTI_ENGINES[$idx]}"
                 payload="${SSTI_PAYLOADS[$idx]}"
                 enc_payload=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$payload'''))" 2>/dev/null || echo "$payload")
                 injected=$(echo "$url" | sed "s/=\([^&]*\)/=${enc_payload}/g")
                 body=$(curl -sk --max-time 10 ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} "$injected" 2>/dev/null || true)
-                if echo "$body" | grep -qE '(\b49\b|7777777)'; then
+                if echo "$body" | grep -q "$SSTI_CANARY"; then
                     log_crit "SSTI confirmed [$engine]: $injected"
                     echo "[CONFIRMED] [SSTI-CONFIRMED] engine=$engine url=$injected" >> "$SSTI_OUT"
                     hit=$(( hit + 1 ))
