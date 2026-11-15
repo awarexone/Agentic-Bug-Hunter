@@ -23,6 +23,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -561,9 +562,16 @@ def run_swarm(domain, workers=6):
     log("info", f"Swarm: fanning out verifiers for {domain} ({workers} workers)...")
     scope = (_SCOPE_CHECKER.domains if _SCOPE_CHECKER and getattr(_SCOPE_CHECKER, "domains", None)
              else [domain])
-    scope_args = " ".join(f'--scope-domain "{d}"' for d in scope)
+    # argv list + shell=False: scope domains are stored raw by ScopeChecker
+    # (unparseable patterns are skipped for matching but kept in .domains),
+    # so interpolating them into a shell string was a command-injection
+    # vector (scope domain 'x";id;#' broke out of the quoting). A list
+    # passes each domain as one literal argument — no shell is involved.
+    cmd = ["python3", script, domain, "--workers", str(int(workers))]
+    for d in scope:
+        cmd += ["--scope-domain", d]
     ok, out = run_cmd(
-        f'python3 "{script}" "{domain}" --workers {int(workers)} {scope_args}',
+        cmd,
         timeout=1800,
     )
     if out.strip():
@@ -628,6 +636,279 @@ def run_eol_check(domain):
     if out.strip():
         print(out.rstrip())
     return ok
+
+
+def _read_recon_lines(domain, *parts, limit=None):
+    """Non-empty lines from a recon file; [] when it is missing/unreadable."""
+    path = os.path.join(RECON_DIR, domain, *parts)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            lines = [ln.strip() for ln in fh if ln.strip()]
+    except OSError:
+        return []
+    return lines[:limit] if limit else lines
+
+
+def _live_urls(domain, limit=50):
+    """Live hosts discovered by recon — the input most agent tools scan."""
+    return _read_recon_lines(domain, "live", "urls.txt", limit=limit)
+
+
+# ── Agent-dispatcher tools ──────────────────────────────────────────────────
+# agent.ToolDispatcher calls these by name (see NETWORK_TOOLS there). They
+# were missing from this module entirely, so every dispatch raised
+# AttributeError and the agent's core tools were dead. Each wrapper below
+# reuses an existing backend from this repo or an external binary from the
+# tool registry, argv list + shell=False, scope-gated, and degrades to
+# False (with a clear log line) when its backend or input data is missing.
+# Two tools have no backend anywhere in the repo (run_api_fuzz,
+# run_cms_exploit); they fail loudly and clearly instead of pretending to
+# run — implementing real exploit modules for them is out of scope here.
+
+
+def run_js_analysis(domain):
+    """SAST over fetched JS (semgrep security packs) + secret scan of JS bundles."""
+    if _scope_blocks_target(domain):
+        return False
+    recon_dir = os.path.join(RECON_DIR, domain)
+    if not os.path.isdir(recon_dir):
+        log("err", f"No recon data found for {domain}. Run recon first.")
+        return False
+    ran, ok = False, True
+    js_dir = os.path.join(recon_dir, "js")
+    if os.path.isdir(js_dir):
+        script = os.path.join(TOOLS_DIR, "sast_scan.py")
+        if os.path.isfile(script) and shutil.which("semgrep"):
+            log("info", f"SAST (semgrep) over fetched JS in {js_dir}...")
+            s_ok, out = run_cmd(["python3", script, js_dir], timeout=3600)
+            if out.strip():
+                print(out.rstrip())
+            ran, ok = True, ok and s_ok
+        else:
+            log("warn", "semgrep not installed — skip SAST over JS")
+    else:
+        log("info", "No fetched JS directory — skip SAST")
+    script = os.path.join(TOOLS_DIR, "secrets_hunter.sh")
+    if os.path.isfile(script):
+        log("info", "Secret scan over JS bundles...")
+        s_ok, out = run_cmd(["bash", script, "--js-bundle", recon_dir], timeout=900)
+        if out.strip():
+            print(out.rstrip())
+        ran, ok = True, ok and s_ok
+    if not ran:
+        log("warn", "JS analysis: nothing ran (no JS dir, no backends)")
+    return ran and ok
+
+
+def run_secret_hunt(domain):
+    """Leaked-secret scan over recon JS bundles (trufflehog/noseyparker/gitleaks)."""
+    if _scope_blocks_target(domain):
+        return False
+    recon_dir = os.path.join(RECON_DIR, domain)
+    if not os.path.isdir(recon_dir):
+        log("err", f"No recon data found for {domain}. Run recon first.")
+        return False
+    script = os.path.join(TOOLS_DIR, "secrets_hunter.sh")
+    if not os.path.isfile(script):
+        log("warn", "secrets_hunter.sh missing — skip secret hunt")
+        return False
+    log("info", f"Secret hunt over JS bundles in {recon_dir}...")
+    ok, out = run_cmd(["bash", script, "--js-bundle", recon_dir], timeout=900)
+    if out.strip():
+        print(out.rstrip())
+    return ok
+
+
+def run_param_discovery(domain):
+    """Hidden GET parameter discovery (arjun/x8) over live hosts."""
+    if _scope_blocks_target(domain):
+        return False
+    urls = _live_urls(domain)
+    if not urls:
+        log("err", f"No live URLs found for {domain}. Run recon first.")
+        return False
+    script = os.path.join(TOOLS_DIR, "param_discovery.sh")
+    if not os.path.isfile(script):
+        log("warn", "param_discovery.sh missing — skip param discovery")
+        return False
+    urls_file = os.path.join(RECON_DIR, domain, "live", "urls.txt")
+    log("info", f"Parameter discovery over {len(urls)} live URL(s)...")
+    ok, out = run_cmd(["bash", script, "-l", urls_file], timeout=1800)
+    if out.strip():
+        print(out.rstrip())
+    return ok
+
+
+def run_post_param_discovery(domain, cookies=""):
+    """POST parameter discovery (arjun -m POST) over live hosts."""
+    if _scope_blocks_target(domain):
+        return False
+    if shutil.which("arjun") is None:
+        log("warn", "arjun not installed — skip POST param discovery")
+        return False
+    urls = _live_urls(domain, limit=10)
+    if not urls:
+        log("err", f"No live URLs found for {domain}. Run recon first.")
+        return False
+    out_dir = os.path.join(FINDINGS_DIR, domain, "params")
+    os.makedirs(out_dir, exist_ok=True)
+    ran = False
+    for i, url in enumerate(urls):
+        out_json = os.path.join(out_dir, f"arjun-post-{i}.json")
+        cmd = ["arjun", "-u", url, "-m", "POST", "-t", "10", "-oJ", out_json]
+        if cookies:
+            cmd += ["-H", f"Cookie: {cookies}"]
+        ok, _ = run_cmd(cmd, timeout=300)
+        ran = ran or ok
+    if not ran:
+        log("warn", "POST param discovery: no endpoint produced output")
+    return ran
+
+
+def run_api_fuzz(domain):
+    """No API-fuzz backend ships in this repo — fail loudly instead of
+    pretending to run (previously: AttributeError from the dispatcher)."""
+    log("warn", "run_api_fuzz is not implemented in this build — no API-fuzz "
+                "backend ships; fuzz API endpoints manually (ffuf/Burp) or via "
+                "run_vuln_scan.")
+    return False
+
+
+def run_cors_check(domain):
+    """CORS misconfiguration scan over live hosts (cors_scanner.py)."""
+    if _scope_blocks_target(domain):
+        return False
+    urls = _live_urls(domain)
+    if not urls:
+        log("err", f"No live URLs found for {domain}. Run recon first.")
+        return False
+    script = os.path.join(TOOLS_DIR, "cors_scanner.py")
+    if not os.path.isfile(script):
+        log("warn", "cors_scanner.py missing — skip CORS check")
+        return False
+    urls_file = os.path.join(RECON_DIR, domain, "live", "urls.txt")
+    log("info", f"CORS check over {len(urls)} live URL(s)...")
+    # cors_scanner exits 2 when it FINDS something (0 = clean): both mean
+    # the scan itself ran fine, so accept either as success.
+    try:
+        proc = subprocess.Popen(
+            ["python3", script, "-l", urls_file, "--json"],
+            shell=False, cwd=BASE_DIR,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        out, _ = proc.communicate(timeout=900)
+        if out.strip():
+            print(out.rstrip())
+        return proc.returncode in (0, 2)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        log("err", "CORS check timed out")
+        return False
+
+
+def run_cms_exploit(domain):
+    """No CMS exploit backend ships in this repo — fail loudly instead of
+    pretending to run (previously: AttributeError from the dispatcher).
+    CMS *detection* already happens in run_vuln_scan (vuln_scanner.sh)."""
+    log("warn", "run_cms_exploit is not implemented in this build — no CMS "
+                "exploit backend ships; test CMS findings manually.")
+    return False
+
+
+def run_rce_scan(domain):
+    """RCE-vector sweep via the CVE hunt: nuclei CVE templates plus the
+    log4j-scan probe when installed (covers Log4Shell and known RCE CVEs).
+    SSTI probing is covered by run_vuln_scan (vuln_scanner.sh)."""
+    log("info", "RCE scan: delegating to CVE hunt (nuclei CVE sweep + log4j-scan)...")
+    return run_cve_hunt(domain)
+
+
+def run_sqlmap_targeted(domain):
+    """sqlmap against parameterized GET URLs found in recon (conservative
+    --level 1 --risk 1; the agent raises these only with explicit approval)."""
+    if _scope_blocks_target(domain):
+        return False
+    if shutil.which("sqlmap") is None:
+        log("warn", "sqlmap not installed — skip targeted SQLi scan")
+        return False
+    urls = _read_recon_lines(domain, "urls", "with_params.txt", limit=10)
+    if not urls:
+        log("info", f"No parameterized URLs found for {domain} — skip sqlmap")
+        return False
+    out_dir = os.path.join(FINDINGS_DIR, domain, "sqlmap")
+    os.makedirs(out_dir, exist_ok=True)
+    ran = False
+    for i, url in enumerate(urls):
+        log("info", f"sqlmap ({i + 1}/{len(urls)}): {url[:100]}")
+        ok, _ = run_cmd(
+            ["sqlmap", "-u", url, "--batch", "--level=1", "--risk=1",
+             "--output-dir", out_dir],
+            timeout=300,
+        )
+        ran = ran or ok
+    return ran
+
+
+def run_sqlmap_on_file(request_file, domain="", level=5, risk=3):
+    """sqlmap against a saved raw HTTP request file (Burp-style)."""
+    if not request_file or not os.path.isfile(request_file):
+        log("err", f"request_file not found: {request_file}")
+        return False
+    if shutil.which("sqlmap") is None:
+        log("warn", "sqlmap not installed — skip sqlmap on request file")
+        return False
+    try:
+        level = max(1, min(5, int(level)))
+        risk = max(1, min(3, int(risk)))
+    except (TypeError, ValueError):
+        log("err", f"invalid sqlmap level/risk: {level!r}/{risk!r}")
+        return False
+    out_dir = os.path.join(FINDINGS_DIR, domain or "sqlmap", "sqlmap")
+    os.makedirs(out_dir, exist_ok=True)
+    ok, out = run_cmd(
+        ["sqlmap", "-r", request_file, "--batch",
+         f"--level={level}", f"--risk={risk}", "--output-dir", out_dir],
+        timeout=1800,
+    )
+    if out.strip():
+        print(out.rstrip())
+    return ok
+
+
+def run_jwt_audit(domain):
+    """Offline JWT analysis (jwt_scanner.py --analyze) for tokens found in
+    recon data — no network traffic, pure offline checks."""
+    if _scope_blocks_target(domain):
+        return False
+    jwt_re = re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
+    tokens, seen = [], set()
+    for parts in (("urls", "all.txt"), ("urls", "js_files.txt"),
+                  ("live", "httpx_full.txt")):
+        for line in _read_recon_lines(domain, *parts):
+            for m in jwt_re.finditer(line):
+                if m.group(0) not in seen:
+                    seen.add(m.group(0))
+                    tokens.append(m.group(0))
+        if len(tokens) >= 5:
+            break
+    tokens = tokens[:5]
+    if not tokens:
+        log("info", f"No JWTs found in recon data for {domain} — skip JWT audit")
+        return False
+    script = os.path.join(TOOLS_DIR, "jwt_scanner.py")
+    if not os.path.isfile(script):
+        log("warn", "jwt_scanner.py missing — skip JWT audit")
+        return False
+    log("info", f"JWT audit over {len(tokens)} token(s)...")
+    ran = False
+    for token in tokens:
+        ok, out = run_cmd(["python3", script, token, "--analyze"], timeout=60)
+        if out.strip():
+            print(out.rstrip())
+        ran = ran or ok
+    return ran
 
 
 def run_graphql_audit(domain):

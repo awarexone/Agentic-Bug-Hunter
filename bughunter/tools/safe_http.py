@@ -13,6 +13,31 @@ from urllib.parse import urljoin, urlparse
 
 _METADATA_HOSTS = {"169.254.169.254", "metadata.google.internal"}
 
+# Networks that are actually dangerous as a redirect destination: the
+# operator's own loopback / private LAN / link-local (incl. cloud
+# metadata) addresses. Deliberately NOT ipaddress.is_private /
+# is_reserved: those properties are far broader than this set — they also
+# cover CGNAT 100.64/10, the 198.18/15 benchmarking range, and the
+# TEST-NET documentation ranges — so any hostname resolving into one of
+# those ranges was wrongly blocked. In environments whose resolver maps
+# public names into 198.18/15 (e.g. sandboxed / egress-proxy resolvers)
+# that meant EVERY redirect was refused and the scope guard never ran.
+_BLOCKED_NETWORKS = (
+    ipaddress.ip_network("0.0.0.0/8"),       # "this" network
+    ipaddress.ip_network("10.0.0.0/8"),      # RFC1918
+    ipaddress.ip_network("127.0.0.0/8"),     # loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local, incl. cloud metadata
+    ipaddress.ip_network("172.16.0.0/12"),   # RFC1918
+    ipaddress.ip_network("192.168.0.0/16"),  # RFC1918
+    ipaddress.ip_network("224.0.0.0/4"),     # multicast
+    ipaddress.ip_network("240.0.0.0/4"),     # reserved (class E), unroutable
+    ipaddress.ip_network("::1/128"),         # IPv6 loopback
+    ipaddress.ip_network("::/128"),          # IPv6 unspecified
+    ipaddress.ip_network("fc00::/7"),        # IPv6 unique-local
+    ipaddress.ip_network("fe80::/10"),       # IPv6 link-local
+    ipaddress.ip_network("ff00::/8"),        # IPv6 multicast
+)
+
 
 def _is_blocked_redirect_target(hostname: str) -> bool:
     if not hostname:
@@ -26,10 +51,10 @@ def _is_blocked_redirect_target(hostname: str) -> bool:
             addr = ipaddress.ip_address(socket.gethostbyname(hostname))
         except (socket.gaierror, ValueError):
             return False  # can't resolve — let the real request fail naturally
-    return (
-        addr.is_private or addr.is_loopback or addr.is_link_local
-        or addr.is_reserved or addr.is_multicast
-    )
+    # Unwrap IPv4-mapped IPv6 (::ffff:127.0.0.1) so it is judged as its IPv4.
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    return any(addr in net for net in _BLOCKED_NETWORKS)
 
 
 def _one_hop(req: urllib.request.Request, timeout: float, **kwargs):
