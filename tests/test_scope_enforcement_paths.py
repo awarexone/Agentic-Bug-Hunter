@@ -83,7 +83,7 @@ class TestHuntCliNonExecution:
             return _FakeProc(0)
 
         monkeypatch.setattr(hunt.subprocess, "Popen", _fake_popen)
-        monkeypatch.setattr(hunt, "_filter_recon_scope", lambda d: None)
+        monkeypatch.setattr(hunt, "_filter_recon_scope", lambda d: True)
         hunt.set_scope_checker(ScopeChecker(["example.com", "*.example.com"]))
         assert hunt.run_recon("example.com") is True
         assert "example.com" in spawned["cmd"]
@@ -104,7 +104,7 @@ class TestHuntCliNonExecution:
     def test_cidr_target_with_matching_ip_scope_allowed(self, monkeypatch):
         """A CIDR fully covered by an IP/CIDR scope rule proceeds."""
         monkeypatch.setattr(hunt.subprocess, "Popen", lambda *a, **k: _FakeProc(0))
-        monkeypatch.setattr(hunt, "_filter_recon_scope", lambda d: None)
+        monkeypatch.setattr(hunt, "_filter_recon_scope", lambda d: True)
         hunt.set_scope_checker(ScopeChecker(["10.0.0.0/16"]))
         assert hunt.run_recon("10.0.0.0/24") is True
 
@@ -134,7 +134,7 @@ class TestReconRedirectScopeEnv:
             return _FakeProc(0)
 
         monkeypatch.setattr(hunt.subprocess, "Popen", _fake_popen)
-        monkeypatch.setattr(hunt, "_filter_recon_scope", lambda d: None)
+        monkeypatch.setattr(hunt, "_filter_recon_scope", lambda d: True)
         hunt.set_scope_checker(checker)
         assert hunt.run_recon("example.com") is True
         return spawned
@@ -181,6 +181,23 @@ class TestHuntReconFiltering:
         assert kept_all == ["https://api.example.com/a", "https://sub.example.com/b"]
         kept_live = live.read_text().split()
         assert kept_live == ["https://cdn.example.com/z"]
+
+    def test_filter_recon_scope_fails_closed_on_filter_error(self, tmp_path, monkeypatch):
+        recon = tmp_path / "recon" / "example.com"
+        (recon / "urls").mkdir(parents=True)
+        target_file = recon / "urls" / "all.txt"
+        target_file.write_text("https://api.example.com/a\\n")
+
+        monkeypatch.setattr(hunt, "RECON_DIR", str(tmp_path / "recon"))
+        checker = ScopeChecker(["example.com", "*.example.com"])
+
+        def fail_filter(_path):
+            raise PermissionError("simulated unreadable scope input")
+
+        monkeypatch.setattr(checker, "filter_file", fail_filter)
+        hunt.set_scope_checker(checker)
+
+        assert hunt._filter_recon_scope("example.com") is False
 
     def test_filter_noop_without_scope(self, tmp_path, monkeypatch):
         recon = tmp_path / "recon" / "example.com" / "urls"

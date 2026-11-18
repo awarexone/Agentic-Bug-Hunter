@@ -276,9 +276,9 @@ TOOLS: list[dict] = [
         "function": {
             "name": "run_cms_exploit",
             "description": (
-                "Run CMS-specific exploit checks: Drupalgeddon (CVE-2014-3704, CVE-2018-7600), "
-                "WordPress plugin vulns + user enum, Joomla RCE, Magento SQLi. "
-                "Use immediately when a CMS is detected — especially Drupal < 8 or WordPress."
+                "Run passive WordPress plugin and theme vulnerability enumeration using WPScan. "
+                "Does not execute CMS exploits or test Drupal, Joomla, or Magento vulnerabilities. "
+                "Use when WordPress is detected."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -804,7 +804,23 @@ class ToolDispatcher:
             # Scope check above only validated the base --target domain;
             # recon may have discovered subdomains/URLs outside that scope.
             # Filter recon output in place before any scanner reads it.
-            self._filter_recon_urls_to_scope(domain)
+            try:
+                self._filter_recon_urls_to_scope(domain)
+            except Exception as exc:
+                msg = (
+                    f"BLOCKED: recon scope filtering failed for {domain}: "
+                    f"{exc}. No network tool was started."
+                )
+                self._record(
+                    kind="scope_decision", tool=name, status="blocked",
+                    url=gate_url, method=method,
+                    scope=self._scope_snapshot(
+                        gate_url,
+                        {"decision": "block", "reason": "recon scope filtering failed"},
+                    ),
+                    observation=msg,
+                )
+                return msg
 
         try:
             if name == "run_recon":
@@ -992,23 +1008,28 @@ class ToolDispatcher:
         recon has produced it) must not crash this — skip silently, same
         as the all.txt case. See SECURITY-REVIEW-2026-08-22.md finding #2
         follow-up. (tools/vuln_scanner.sh also reads
-        $PRIORITY_DIR/critical_hosts.txt / high_hosts.txt /
-        prioritized_hosts.txt for its ORDERED_SCAN target list, but nothing
-        in this codebase currently writes those files — they're inert, so
-        filtering them here would be dead code.)"""
+        $PRIORITY_DIR/critical_hosts.txt, high_hosts.txt, and
+        prioritized_hosts.txt for its ORDERED_SCAN target list. Filter these
+        defensively because stale or externally generated files may exist.)"""
         if self._guard._scope_checker is None:
             return  # fail_closed already blocked dispatch entirely in this case
         h = _h()
         try:
             recon_dir = h._resolve_recon_dir(domain)
-        except Exception:
-            return
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not resolve recon directory for {domain}: {exc}"
+            ) from exc
         relative_paths = (
             os.path.join("urls", "all.txt"),
             os.path.join("urls", "with_params.txt"),
             os.path.join("urls", "js_files.txt"),
             os.path.join("urls", "api_endpoints.txt"),
+            os.path.join("urls", "graphql.txt"),
             os.path.join("live", "urls.txt"),
+            os.path.join("priority", "critical_hosts.txt"),
+            os.path.join("priority", "high_hosts.txt"),
+            os.path.join("priority", "prioritized_hosts.txt"),
         )
         for rel_path in relative_paths:
             urls_file = os.path.join(recon_dir, rel_path)

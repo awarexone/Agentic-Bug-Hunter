@@ -106,7 +106,7 @@ log_info "Running: ${CMD[*]}"
 echo ""
 
 # Run sisakulint and capture output (don't fail on non-zero exit — findings cause exit 1)
-"${CMD[@]}" 2>&1 | tee "$SCAN_RESULTS" || true
+GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never "${CMD[@]}" 2>&1 | tee "$SCAN_RESULTS" || true
 
 echo ""
 

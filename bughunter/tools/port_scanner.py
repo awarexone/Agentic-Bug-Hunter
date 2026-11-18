@@ -142,17 +142,20 @@ def build_smap_cmd(target: str, is_list: bool) -> list[str]:
 
 
 def _binary(prefer_smap: bool) -> str | None:
-    order = ["smap", "naabu"] if prefer_smap else ["naabu", "smap"]
-    for b in order:
-        if shutil.which(b):
-            return b
+    # An explicit --smap request must never fall back to active Naabu probing.
+    if prefer_smap:
+        return "smap" if shutil.which("smap") else None
+
+    for binary in ("naabu", "smap"):
+        if shutil.which(binary):
+            return binary
     return None
 
 
 def scan(target: str, ports: str | None, top: int, is_list: bool, prefer_smap: bool) -> list[PortResult]:
     binary = _binary(prefer_smap)
     if binary is None:
-        raise FileNotFoundError("naabu")
+        raise FileNotFoundError("smap" if prefer_smap else "naabu or smap")
     if binary == "smap":
         cmd = build_smap_cmd(target, is_list)
     else:
@@ -198,13 +201,22 @@ def main(argv: list[str] | None = None) -> int:
     try:
         results = scan(target, args.port, args.top, is_list, args.smap)
     except FileNotFoundError:
-        print(
-            "[-] neither `naabu` nor `smap` is installed.\n"
-            "    naabu: GOBIN=$HOME/go/bin go install "
-            "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest\n"
-            "    smap : GOBIN=$HOME/go/bin go install github.com/s0md3v/smap/cmd/smap@latest",
-            file=sys.stderr,
-        )
+        if args.smap:
+            print(
+                "[-] --smap requires `smap`; refusing to fall back to active Naabu.\\n"
+                "    Install: GOBIN=$HOME/go/bin go install "
+                "github.com/s0md3v/smap/cmd/smap@latest",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "[-] neither `naabu` nor `smap` is installed.\\n"
+                "    naabu: GOBIN=$HOME/go/bin go install "
+                "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest\\n"
+                "    smap : GOBIN=$HOME/go/bin go install "
+                "github.com/s0md3v/smap/cmd/smap@latest",
+                file=sys.stderr,
+            )
         return 127
     except subprocess.TimeoutExpired:
         print("[-] port scan timed out (30m).", file=sys.stderr)

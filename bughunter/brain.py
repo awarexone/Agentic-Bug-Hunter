@@ -1456,151 +1456,105 @@ Keep it under 80 words total."""
     # Phase 1 — Recon Analysis
     # ─────────────────────────────────────────────────────────────────────────
     def analyze_recon(self, recon_dir: str) -> str:
+        """Analyze a bounded, evidence-based sample of reconnaissance data."""
         if not self.enabled:
             return ""
 
         recon_path = Path(recon_dir)
-        target     = self._target_from_artifact_dir(recon_dir)
-        session_id = self._session_id_from_artifact_dir(recon_dir)
+        target = self._target_from_artifact_dir(recon_dir)
 
-        def count(f):
-            p = recon_path / f
-            return sum(1 for _ in open(p)) if p.exists() else 0
-
-        def collect_upload_hints() -> tuple[int, str]:
-            patterns = (
-                "upload", "uploads", "uploader", "attachment", "attachments",
-                "filemanager", "connector.php", "ckfinder", "fckeditor",
-                "userfiles", "elfinder", "kcfinder",
-            )
-            seen: set[str] = set()
-            sample: list[str] = []
-            for rel in ("urls/sensitive_paths.txt", "urls/all.txt", "urls/js_files.txt"):
-                path = recon_path / rel
-                if not path.exists():
-                    continue
-                try:
-                    for raw in path.read_text(errors="ignore").splitlines():
+        def read_lines(rel: str, limit: int = 12, max_chars: int = 1800) -> str:
+            path = recon_path / rel
+            if not path.is_file():
+                return "(not available)"
+            try:
+                lines = []
+                used = 0
+                with path.open(errors="ignore") as handle:
+                    for raw in handle:
                         line = raw.strip()
-                        lower = line.lower()
-                        if not line or not line.startswith(("http://", "https://")):
+                        if not line:
                             continue
-                        if any(token in lower for token in patterns) and line not in seen:
-                            seen.add(line)
-                            if len(sample) < 15:
-                                sample.append(line)
-                except OSError:
-                    continue
-            return len(seen), "\n".join(sample)
+                        remaining = max_chars - used
+                        if remaining <= 0 or len(lines) >= limit:
+                            break
+                        line = line[:remaining]
+                        lines.append(line)
+                        used += len(line) + 1
+                return "\n".join(lines) if lines else "(empty)"
+            except OSError:
+                return "(unreadable)"
+
+        def count_lines(rel: str) -> int:
+            path = recon_path / rel
+            if not path.is_file():
+                return 0
+            try:
+                with path.open(errors="ignore") as handle:
+                    return sum(1 for _ in handle)
+            except OSError:
+                return 0
 
         summary = {
-            "target":             target,
-            "total_subdomains":   count("subdomains/all.txt"),
-            "resolved_hosts":     count("subdomains/resolved.txt"),
-            "live_http_hosts":    count("live/urls.txt"),
-            "critical_cve_hosts": count("priority/critical_hosts.txt"),
-            "high_cve_hosts":     count("priority/high_hosts.txt"),
-            "total_urls":         count("urls/all.txt"),
-            "parameterized_urls": count("urls/with_params.txt"),
-            "api_endpoints":      count("urls/api_endpoints.txt"),
-            "openapi_specs":      count("api_specs/spec_urls.txt"),
-            "openapi_public_ops": count("api_specs/public_operations.txt"),
-            "openapi_unauth":     count("api_specs/unauth_api_findings.txt"),
-            "js_files":           count("urls/js_files.txt"),
-            "interesting_params": count("params/interesting_params.txt"),
-            "graphql_endpoints":  count("urls/graphql.txt"),
-            "exposed_configs":    count("exposure/config_files.txt"),
+            "target": target,
+            "subdomains": count_lines("subdomains/all.txt"),
+            "resolved_hosts": count_lines("subdomains/resolved.txt"),
+            "live_hosts": count_lines("live/urls.txt"),
+            "total_urls": count_lines("urls/all.txt"),
+            "parameterized_urls": count_lines("urls/with_params.txt"),
+            "api_endpoints_all_hosts": count_lines("urls/api_endpoints.txt"),
+            "app_ruul_production_api_endpoints": count_lines("urls/api_endpoints_app_ruul.txt"),
+            "javascript_files": count_lines("urls/js_files.txt"),
+            "interesting_parameters": count_lines("params/interesting_params.txt"),
+            "critical_priority_hosts": count_lines("priority/critical_hosts.txt"),
+            "high_priority_hosts": count_lines("priority/high_hosts.txt"),
         }
-        upload_hint_count, upload_hint_sample = collect_upload_hints()
-        summary["upload_like_urls"] = upload_hint_count
 
-        critical_hosts = self._read_file_sample(str(recon_path / "priority/critical_hosts.txt"), 1500)
-        high_hosts     = self._read_file_sample(str(recon_path / "priority/high_hosts.txt"), 1500)
-        api_endpoints  = self._read_file_sample(str(recon_path / "urls/api_endpoints.txt"), 2000)
-        httpx_sample   = self._read_file_sample(str(recon_path / "live/httpx_full.txt"), 3000)
-        js_secrets     = self._read_file_sample(str(recon_path / "js/potential_secrets.txt"), 1500)
-        takeovers      = self._read_file_sample(str(recon_path / "live/nuclei_takeovers.txt"), 800)
-        interesting_params = self._read_file_sample(str(recon_path / "params/interesting_params.txt"), 800)
-        priority_json  = self._read_file_sample(str(recon_path / "priority/prioritized_hosts.json"), 3000)
-        attack_surface = self._read_file_sample(str(recon_path / "priority/attack_surface.md"), 2500)
-        openapi_summary = self._read_file_sample(str(recon_path / "api_specs/summary.md"), 2000)
-        import os as _os
-        _env = _os.environ.get("BUGHUNTER_HOME")
-        _clone = Path(__file__).resolve().parent
-        repo_root = Path(_env).expanduser() if _env else (_clone if _os.access(_clone, _os.W_OK) else Path.home() / ".bughunter")
-        session_session_path = repo_root / "targets" / target / "autonomous_session.json"
-        if session_id:
-            session_session_path = repo_root / "targets" / target / "sessions" / session_id / "autonomous_session.json"
-        autonomous_session = self._read_file_sample(str(session_session_path), 2500)
+        sections = {
+            "Live hosts": read_lines("live/httpx_full.txt", 8, 1000),
+            "Priority hosts": read_lines("priority/critical_hosts.txt", 5, 700),
+            "High priority hosts": read_lines("priority/high_hosts.txt", 5, 700),
+            "APP.RUUL.IO production API endpoints": read_lines("urls/api_endpoints_app_ruul.txt", 25, 2600),
+            "Interesting parameters": read_lines("params/interesting_params.txt", 10, 1000),
+            "Potential JS secrets (unverified)": read_lines("js/potential_secrets.txt", 5, 700),
+            "Takeover scanner output": read_lines("live/nuclei_takeovers.txt", 5, 500),
+            "OpenAPI audit": read_lines("api_specs/summary.md", 10, 900),
+        }
 
-        prompt = f"""I just completed recon on target: {target}
+        evidence = "\n\n".join(
+            f"## {name}\n{content}" for name, content in sections.items()
+        )
 
-## Recon Numbers
+        prompt = f"""Review this bounded reconnaissance sample for {target}.
+
+RECON COUNTS:
 {json.dumps(summary, indent=2)}
 
-## CVE-Priority (tech detection + CVSS scoring)
-{delimit_untrusted("CVE-priority JSON", priority_json) if priority_json else "(not available)"}
+OBSERVED DATA:
+{delimit_untrusted("recon evidence", evidence)}
 
-## Attack surface report
-{delimit_untrusted("attack surface report", attack_surface) if attack_surface else "(not available)"}
+Rules:
+- This is reconnaissance, not proof of vulnerabilities.
+- Do not claim that a vulnerability exists unless the supplied evidence proves it.
+- Never invent endpoints, hostnames, parameters, credentials, or PoCs.
+- Every proposed lead must quote an exact endpoint from the supplied production API inventory.
+- Do not treat an endpoint name or endpoint count as proof of a vulnerability.
+- Do not claim SQL injection, IDOR, authentication bypass, or data exposure without supporting evidence.
+- If the supplied sample is insufficient to identify a vulnerability, say that manual verification is required.
+- Do not recommend testing sandbox or external hosts.
+- Clearly distinguish observations, hypotheses, and verified vulnerabilities.
+- Treat potential secrets as unverified until safely validated.
+- If a category says "(empty)" or "(not available)", do not invent data for it.
+- Recommend only non-destructive, in-scope manual verification.
+- Keep the answer concise and prioritize the three strongest evidence-backed leads.
+- If no meaningful leads exist, say so explicitly."""
 
-## OpenAPI audit summary
-{delimit_untrusted("OpenAPI audit summary", openapi_summary) if openapi_summary else "(not available)"}
-
-## Autonomous session state
-{delimit_untrusted("autonomous session state", autonomous_session) if autonomous_session else "(not available)"}
-
-## Live hosts sample (httpx with tech detection)
-{delimit_untrusted("live hosts sample", httpx_sample) if httpx_sample else "(empty)"}
-
-## CRITICAL CVE-risk hosts
-{delimit_untrusted("CRITICAL CVE-risk hosts", critical_hosts) if critical_hosts else "(none)"}
-
-## HIGH CVE-risk hosts
-{delimit_untrusted("HIGH CVE-risk hosts", high_hosts) if high_hosts else "(none)"}
-
-## API endpoints discovered
-{delimit_untrusted("API endpoints discovered", api_endpoints) if api_endpoints else "(none)"}
-
-## Interesting parameters (SSRF/redirect/LFI candidates)
-{delimit_untrusted("interesting parameters", interesting_params) if interesting_params else "(none)"}
-
-## Upload-like URLs / connectors
-{delimit_untrusted("upload-like URLs", upload_hint_sample) if upload_hint_sample else "(none)"}
-
-## Potential JS secrets
-{delimit_untrusted("potential JS secrets", js_secrets) if js_secrets else "(none)"}
-
-## Subdomain takeover candidates
-{delimit_untrusted("subdomain takeover candidates", takeovers) if takeovers else "(none)"}
-
----
-
-Your job as a senior pentester:
-
-1. ATTACK SURFACE ASSESSMENT — What is actually interesting? Only the 3-5 most promising angles based on what you see.
-
-2. PRIORITY HUNT PLAN — Numbered list ordered by likely impact. For each:
-   - What exactly to test (specific URL or endpoint pattern)
-   - Why it's interesting (what in the data makes it worth time)
-   - What tools/payloads to use
-   - What a successful exploit looks like
-
-3. RED FLAGS — Data patterns that suggest bigger bugs nearby?
-   (e.g., sequential IDs in API paths, inconsistent auth, staging subdomains)
-
-4. KILL LIST — What should I NOT waste time on from this data?
-
-5. TIME ALLOCATION — If I have 4 hours, how should I split it?
-
-Be specific. Reference actual hostnames/endpoints/params from the data above.
-
-CRITICAL GROUNDING RULE: You MUST only reference hosts, paths, and parameters that
-appear verbatim in the data sections above. Do NOT invent, guess, or fabricate
-endpoints, URLs, APIs, credentials, or findings. If the data shows "(none)" or
-"(empty)", state that explicitly and do not substitute hypothetical examples."""
-
-        result = self._stream(prompt, f"Recon Analysis → {target}", MAX_RESP)
+        result = self._stream(prompt, f"Recon Analysis → {target}", 700)
+        if not result:
+            result = (
+                "Recon AI analysis unavailable (local model timed out or returned "
+                "an empty response). Original reconnaissance artifacts are preserved."
+            )
         self._save_analysis(recon_dir, "01_recon_analysis.md", result)
         return result
 
@@ -1635,9 +1589,37 @@ endpoints, URLs, APIs, credentials, or findings. If the data shows "(none)" or
         summary_file = findings_path / "summary.txt"
         summary_text = summary_file.read_text(errors="ignore") if summary_file.exists() else ""
 
-        if not sections and not summary_text:
-            print(f"{YELLOW}[!] No findings data in {findings_dir}{NC}")
-            return ""
+        # Deterministic guard: never ask the LLM to interpret an empty scan.
+        # The scanner summary is authoritative for whether findings exist.
+        summary_json = findings_path / "summary.json"
+        counts = {}
+        if summary_json.exists():
+            try:
+                import json
+                data = json.loads(summary_json.read_text(errors="ignore"))
+                counts = data.get("counts", {})
+            except (ValueError, OSError, AttributeError):
+                counts = {}
+
+        def count_values(value):
+            if isinstance(value, dict):
+                return sum(count_values(v) for v in value.values())
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return max(0, value)
+            return 0
+
+        total_summary_findings = count_values(counts)
+
+        if not sections and (not summary_text or (counts and total_summary_findings == 0)):
+            result = (
+                "No findings — nothing to interpret.\n\n"
+                "The scanner summary contains zero confirmed, possible, and "
+                "informational findings. No vulnerability claims or exploit "
+                "scenarios were generated."
+            )
+            print(f"{YELLOW}[!] Zero scanner findings. Skipping AI interpretation.{NC}")
+            self._save_analysis(findings_dir, "02_scan_interpretation.md", result)
+            return result
 
         findings_text = "\n\n".join(
             f"## {cat.upper()}\n{content}" for cat, content in sections.items()

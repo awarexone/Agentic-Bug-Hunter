@@ -716,15 +716,15 @@ if command -v nuclei &>/dev/null && [ -s "$RECON_DIR/live/urls.txt" ]; then
     NUCLEI_OUT="$RECON_DIR/nuclei"
     mkdir -p "$NUCLEI_OUT"
     NUC_LIMIT=$([ "$QUICK_MODE" = "--quick" ] && echo 50 || echo 200)
-    NUC_SEV=$([ "$QUICK_MODE" = "--quick" ] && echo "high,critical" || echo "medium,high,critical")
+    NUC_SEV="low,medium,high,critical"
     NUC_TIMEOUT=$([ "$QUICK_MODE" = "--quick" ] && echo 600 || echo 1800)
 
     head -"$NUC_LIMIT" "$RECON_DIR/live/urls.txt" > "$NUCLEI_OUT/targets.txt"
     log_step "nuclei on $(wc -l < "$NUCLEI_OUT/targets.txt" | tr -d ' ') hosts (severity=$NUC_SEV, timeout=${NUC_TIMEOUT}s)..."
 
-    NUC_RL="${NUC_RATE_LIMIT:-300}"
-    NUC_C="${NUC_CONCURRENCY:-50}"
-    NUC_BS="${NUC_BULK_SIZE:-50}"
+    NUC_RL="${NUC_RATE_LIMIT:-250}"
+    NUC_C="${NUC_CONCURRENCY:-25}"
+    NUC_BS="${NUC_BULK_SIZE:-10}"
 
     timeout "$NUC_TIMEOUT" nuclei \
         -l "$NUCLEI_OUT/targets.txt" \
@@ -732,6 +732,8 @@ if command -v nuclei &>/dev/null && [ -s "$RECON_DIR/live/urls.txt" ]; then
         -rl "$NUC_RL" \
         -c "$NUC_C" \
         -bs "$NUC_BS" \
+        -retries 1 \
+        -timeout 10 \
         -silent \
         -stats \
         ${BB_AUTH_ARGS[@]+"${BB_AUTH_ARGS[@]}"} \
