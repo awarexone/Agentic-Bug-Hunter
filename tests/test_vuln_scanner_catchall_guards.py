@@ -62,87 +62,55 @@ def test_catchall_match_is_comma_anchored():
     )
 
 
+
 def test_saml_endpoint_discovery_has_a_control_probe():
-    """Accepting 200/301/302/403 as "SAML endpoint found" with no baseline makes
-    every catch-all host report the whole path list. A control probe against a
-    random path establishes what the host says about paths that do not exist.
-    """
+    """A random-path control must be checked before SAML path discovery."""
     scanner = _scanner()
 
-    assert "SAML_CONTROL=$(curl" in scanner
-    assert '"${host}/saml-control-$RANDOM$$"' in scanner
-    # The control probe must be consulted before the path loop runs.
-    control_at = scanner.index("SAML_CONTROL=$(curl")
-    loop_at = scanner.index('for SAML_PATH in "/saml/login"')
-    assert control_at < loop_at, "control probe must precede the SAML path loop"
+    assert "CONTROL=$(curl" in scanner
+    assert '"${host%/}/saml-control-$RANDOM-$$"' in scanner
+    control_at = scanner.index("CONTROL=$(curl")
+    loop_at = scanner.index("for path in /saml/login")
+    assert control_at < loop_at
+    assert 'case "$CONTROL" in' in scanner
+    assert '[INFORMATIONAL] [SAML-CATCHALL]' in scanner
 
 
 def test_saml_endpoint_consumers_read_the_url_field():
-    """endpoints.txt rows are:
-
-        [INFORMATIONAL] [SAML-ENDPOINT] <url> | HTTP <code>
-
-    so the URL is field 3. Reading field 2 yields the literal tag
-    "[SAML-ENDPOINT]", which curl rejects at URL-parse time — the metadata leg
-    and the ACS_URL feeding the signature-stripping probe then never reach the
-    network, silently.
-    """
+    """SAML metadata processing must extract the URL, not the label."""
     scanner = _scanner()
 
-    assert "[INFORMATIONAL] [SAML-ENDPOINT] ${host}${SAML_PATH}" in scanner
-    assert scanner.count("awk '{print $3}'") >= 2
-    assert "awk '{print $2}'" not in scanner, (
-        "field 2 is the [SAML-ENDPOINT] tag, not the URL"
-    )
+    assert 'echo "[INFORMATIONAL] [SAML-ENDPOINT] $url | HTTP $code"' in scanner
+    assert 'awk \'{print $3}\' "$SAML_ENDPOINTS_FILE"' in scanner
+    assert 'awk \'{print $2}\' "$SAML_ENDPOINTS_FILE"' not in scanner
+    assert '[SAML-METADATA-EXPOSED]' in scanner
 
 
 def test_auth_propagates_to_catchall_and_upload_probes():
-    """These four ran anonymously while every neighbouring call carried the
-    session. Behind a login the upload probes all got 401, found nothing, and
-    the run reported no findings — indistinguishable from "no upload surface".
-    """
-    # These curl calls span line continuations, so compare against a version
-    # with backslash-newlines joined — a per-line check cannot see a splat that
-    # sits on the preceding physical line.
+    """Authenticated discovery and metadata requests must reuse BB_AUTH_ARGS."""
     joined = _joined_lines(_scanner())
 
-    def command_with(needle: str) -> str:
+    def command_with(needle):
         matches = [ln for ln in joined if needle in ln]
-        assert matches, f"anchor vanished from the scanner: {needle!r}"
+        assert matches, f"anchor vanished from scanner: {needle!r}"
         return matches[0]
 
-    # catch-all baseline must use the same session as the probes it baselines
     assert AUTH_SPLAT in command_with('"${host}/non_existent_$(date +%s)"')
-    # upload-surface probe loop
     assert AUTH_SPLAT in command_with('"$U")" -eq 200')
-    # SAML endpoint discovery
-    assert AUTH_SPLAT in command_with('"${host}${SAML_PATH}" 2>/dev/null')
-    # SAML control probe
-    assert AUTH_SPLAT in command_with('"${host}/saml-control-$RANDOM$$"')
-    # SAML metadata retrieval
-    assert AUTH_SPLAT in command_with("RESP=$(curl -sk --max-time 8")
+    assert AUTH_SPLAT in command_with('"$url" 2>/dev/null || echo 000')
+    assert AUTH_SPLAT in command_with('"${host%/}/saml-control-$RANDOM-$$"')
+    assert AUTH_SPLAT in command_with("body=$(curl -sk --max-time 8")
 
 
 def test_deliberately_anonymous_probes_stay_anonymous():
-    """Two probes must NOT carry the session, and both look like bugs to anyone
-    auditing for missing auth:
-
-    - MFA workflow-skip asks whether a page is reachable *without* auth, so
-      supplying the session makes it pass trivially.
-    - SAML signature-stripping forges a login; replaying it with a valid
-      session returns 200/302 regardless, producing a false CRITICAL on every
-      authenticated run.
-
-    This test exists so a future "add the missing auth array" sweep fails here
-    instead of silently destroying both checks.
-    """
+    """Protected-route reachability checks must remain unauthenticated."""
     scanner = _scanner()
     lines = scanner.splitlines()
 
-    def line_with(needle: str) -> str:
-        matches = [ln for ln in lines if needle in ln]
-        assert matches, f"anchor vanished from the scanner: {needle!r}"
-        return matches[0]
+    matches = [ln for ln in lines if '"$HOST/$path" 2>/dev/null' in ln]
+    assert matches, "anonymous protected-route probe is missing"
+    assert AUTH_SPLAT not in matches[0]
 
-    assert AUTH_SPLAT not in line_with('"$HOST/$PROTECTED" 2>/dev/null')
-    assert AUTH_SPLAT not in line_with('-d "SAMLResponse=${STRIPPED_SAML}"')
+    # SAML signature-stripping/login-forgery probes must not be present.
+    assert 'SAMLResponse=${STRIPPED_SAML}' not in scanner
+    assert 'SAML-SIG-STRIP' not in scanner

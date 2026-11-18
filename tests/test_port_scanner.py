@@ -5,10 +5,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import tools.port_scanner as port_scanner
 from tools.port_scanner import (
     build_naabu_cmd,
     classify,
     parse_naabu,
+    scan,
     summarize,
 )
 
@@ -70,3 +72,49 @@ def test_build_naabu_cmd_top_ports_vs_explicit():
 def test_build_naabu_cmd_list_mode():
     cmd = build_naabu_cmd("hosts.txt", None, 100, True)
     assert "-list" in cmd and "hosts.txt" in cmd
+
+
+def test_smap_preference_never_falls_back_to_naabu(monkeypatch):
+    monkeypatch.setattr(
+        port_scanner.shutil,
+        "which",
+        lambda binary: "/usr/bin/naabu" if binary == "naabu" else None,
+    )
+    assert port_scanner._binary(prefer_smap=True) is None
+
+
+def test_smap_scan_fails_closed_when_only_naabu_is_installed(monkeypatch):
+    monkeypatch.setattr(
+        port_scanner.shutil,
+        "which",
+        lambda binary: "/usr/bin/naabu" if binary == "naabu" else None,
+    )
+    monkeypatch.setattr(
+        port_scanner.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Naabu must not run for an explicit --smap request")
+        ),
+    )
+
+    import pytest
+    with pytest.raises(FileNotFoundError, match="smap"):
+        scan("example.com", None, 100, False, prefer_smap=True)
+
+
+def test_normal_mode_still_prefers_naabu(monkeypatch):
+    monkeypatch.setattr(
+        port_scanner.shutil,
+        "which",
+        lambda binary: "/usr/bin/naabu" if binary == "naabu" else None,
+    )
+    assert port_scanner._binary(prefer_smap=False) == "naabu"
+
+
+def test_normal_mode_can_still_fall_back_to_smap(monkeypatch):
+    monkeypatch.setattr(
+        port_scanner.shutil,
+        "which",
+        lambda binary: "/usr/bin/smap" if binary == "smap" else None,
+    )
+    assert port_scanner._binary(prefer_smap=False) == "smap"

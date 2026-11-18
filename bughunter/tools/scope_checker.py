@@ -203,7 +203,9 @@ def _domain_matches(hostname: str, pattern: str) -> bool:
         # apex itself. endswith on the dotted suffix is what blocks
         # "evil-target.com" (ends with "-target.com", not ".target.com").
         return hostname.endswith(suffix) and hostname != suffix[1:]
-    return hostname == pattern
+    # A plain domain allowlist entry includes its apex and all subdomains.
+    # The dot boundary prevents lookalike matches such as evil-target.com.
+    return hostname == pattern or hostname.endswith("." + pattern)
 
 
 def _exclusion_matches(hostname: str, pattern: str) -> bool:
@@ -428,6 +430,7 @@ class ScopeChecker:
                 }
 
         eff_port = _port if _port is not None else (443 if scheme == "https" else 80)
+        matching_rules = []
         for rule in self._allow_domain_rules:
             if not _domain_matches(host, rule["host"]):
                 continue
@@ -435,6 +438,18 @@ class ScopeChecker:
                 continue
             if not _path_matches(path, rule["path"]):
                 continue
+
+            # Attribute the decision to the narrowest matching rule.
+            specificity = (
+                len(rule["host"]),
+                rule["path"] is not None,
+                len(rule["path"] or ""),
+                rule["port"] is not None,
+            )
+            matching_rules.append((specificity, rule))
+
+        if matching_rules:
+            _, rule = max(matching_rules, key=lambda item: item[0])
             return {
                 "in_scope": True, "host": host, "kind": "domain",
                 "matched_rule": rule["raw"],

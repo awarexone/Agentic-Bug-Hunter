@@ -61,6 +61,9 @@ _RECON_URL_RELPATHS = (
     ("urls", "api_endpoints.txt"),
     ("urls", "graphql.txt"),
     ("live", "urls.txt"),
+    ("priority", "critical_hosts.txt"),
+    ("priority", "high_hosts.txt"),
+    ("priority", "prioritized_hosts.txt"),
 )
 
 
@@ -120,21 +123,26 @@ def _scope_blocks_target(domain) -> bool:
     return False
 
 
-def _filter_recon_scope(domain) -> None:
-    """Drop out-of-scope URLs from recon files in place (no-op if scope unset)."""
+def _filter_recon_scope(domain) -> bool:
+    """Filter recon inputs in place; fail closed if configured filtering fails."""
     if _SCOPE_CHECKER is None:
-        return
+        return True
     try:
         recon_dir = _resolve_recon_dir(domain)
-    except ValueError:
-        return
+    except (OSError, ValueError) as exc:
+        log("err", f"Scope filtering could not resolve recon data for {domain}: {exc}")
+        return False
+
     for parts in _RECON_URL_RELPATHS:
         f = os.path.join(recon_dir, *parts)
-        if os.path.isfile(f):
-            try:
-                _SCOPE_CHECKER.filter_file(f)
-            except OSError:
-                continue
+        if not os.path.isfile(f):
+            continue
+        try:
+            _SCOPE_CHECKER.filter_file(f)
+        except OSError as exc:
+            log("err", f"Scope filtering failed for {f}: {exc}; refusing to continue")
+            return False
+    return True
 
 
 def _normalize_argv(argv):
@@ -494,7 +502,9 @@ def run_recon(domain, quick=False, scope_lock=False):
         proc.wait(timeout=3600)  # 60 min timeout (CIDR ranges can be large)
         ok = proc.returncode == 0
         # Filter recon-discovered URLs to scope before any scanner reads them.
-        _filter_recon_scope(domain)
+        if not _filter_recon_scope(domain):
+            log("err", f"Recon output scope filtering failed for {domain}")
+            return False
         return ok
     except subprocess.TimeoutExpired:
         proc.kill()
@@ -708,23 +718,96 @@ def run_graphql_audit(domain):
     return any_ok
 
 
+def run_cms_exploit(domain):
+    """Run passive WordPress plugin/theme vulnerability enumeration."""
+    if _scope_blocks_target(domain):
+        return False
+
+    from urllib.parse import urlparse
+    from tools.target_normalize import safe_target_dirname
+
+    host = safe_target_dirname(domain)
+    if not host:
+        log("err", f"Invalid CMS target: {domain}")
+        return False
+
+    target = domain if "://" in domain else f"https://{domain}"
+    parsed = urlparse(target)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        log("err", f"Invalid CMS URL: {target}")
+        return False
+    if _SCOPE_CHECKER is not None and not _SCOPE_CHECKER.is_in_scope(target):
+        log("err", f"CMS target outside scope: {target}")
+        return False
+
+    out_dir = os.path.join(FINDINGS_DIR, host, "cms")
+    os.makedirs(out_dir, exist_ok=True)
+    cmd = [
+        "docker", "run", "--rm",
+        "-v", f"{out_dir}:/output",
+        "wpscanteam/wpscan",
+        "--url", target,
+        "--enumerate", "vp,vt",
+        "--plugins-detection", "passive",
+        "--format", "json",
+        "--output", "/output/wpscan.json",
+        "--no-banner",
+    ]
+    token = os.environ.get("WPSCAN_API_TOKEN")
+    if token:
+        cmd += ["--api-token", token]
+
+    try:
+        result = subprocess.run(
+            cmd, cwd=BASE_DIR, env=os.environ.copy(),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, timeout=1800, check=False
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        log("err", f"WPScan could not complete: {exc}")
+        return False
+
+    with open(os.path.join(out_dir, "wpscan.log"), "w") as f:
+        f.write(result.stdout or "")
+
+    if result.returncode != 0:
+        log("err", f"WPScan failed; see {out_dir}/wpscan.log")
+        return False
+    if not os.path.isfile(os.path.join(out_dir, "wpscan.json")):
+        log("err", "WPScan JSON output missing.")
+        return False
+
+    log("info", f"WPScan results saved: {out_dir}/wpscan.json")
+    return True
+
+
 def run_vuln_scan(domain, quick=False):
     """Run vulnerability scanner on recon results."""
     if _scope_blocks_target(domain):
         return False
-    recon_dir = os.path.join(RECON_DIR, domain)
-    if not os.path.isdir(recon_dir):
-        log("err", f"No recon data found for {domain}. Run recon first.")
+    from tools.target_normalize import safe_target_dirname
+
+    host = safe_target_dirname(domain)
+    if not host:
+        log("err", f"Could not safely normalize target: {domain}")
         return False
 
-    # Re-filter recon output to scope before active scanning reads it (covers
-    # the --scan-only path where run_recon's own filter never ran this session).
-    _filter_recon_scope(domain)
+    recon_dir = _resolve_recon_dir(host)
+    if not os.path.isdir(recon_dir):
+        log("err", f"No recon data found for {host}. Run recon first.")
+        return False
 
-    log("info", f"Running vulnerability scanner on {domain}...")
+    # Re-filter recon output to scope before active scanning reads it.
+    if not _filter_recon_scope(host):
+        log("err", f"Scope filtering failed for {host}; vulnerability scan refused")
+        return False
+
+    log("info", f"Running vulnerability scanner on {host}...")
     script = os.path.join(TOOLS_DIR, "vuln_scanner.sh")
 
     child_env = os.environ.copy()
+    if _SCOPE_CHECKER is not None:
+        child_env["SCOPE_ENFORCED"] = "1"
     if _AUTH_SESSION is not None:
         _AUTH_SESSION.export_to_env(child_env)
 
@@ -733,6 +816,8 @@ def run_vuln_scan(domain, quick=False):
     cmd = ["bash", script, recon_dir]
     if quick:
         cmd.append("--quick")
+    else:
+        cmd.append("--full")
     try:
         proc = subprocess.Popen(cmd, shell=False, cwd=BASE_DIR, env=child_env)
         proc.wait(timeout=1800)
@@ -744,8 +829,82 @@ def run_vuln_scan(domain, quick=False):
 
 
 def generate_reports(domain):
-    """Generate reports for findings."""
-    log("warn", "report_generator.py has been removed. Use /report in Claude Code to generate reports.")
+    """Run local AI analysis and generate reports from validated findings."""
+    from tools.target_normalize import safe_target_dirname
+
+    host = safe_target_dirname(domain)
+    if not host:
+        log("err", f"Could not safely normalize target for AI analysis: {domain}")
+        return 0
+
+    recon_dir = _resolve_recon_dir(host)
+    findings_dir = _resolve_findings_dir(host)
+
+    if not os.path.isdir(findings_dir):
+        log("warn", f"No findings directory for {host}; AI report stage skipped.")
+        return 0
+
+    # Load the existing local provider/model configuration.
+    config_path = os.path.expanduser("~/.bughunter/config.json")
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            config = json.load(f)
+    except (OSError, ValueError):
+        config = {}
+
+    provider = os.environ.get("BRAIN_PROVIDER") or config.get("provider") or "ollama"
+    models = config.get("models", {})
+    model = os.environ.get("BRAIN_MODEL")
+    if not model and isinstance(models, dict):
+        model = models.get(provider)
+
+    os.environ["BRAIN_PROVIDER"] = provider
+    if model:
+        os.environ["BRAIN_MODEL"] = model
+
+    # Import the existing Brain implementation; do not create another engine.
+    if BASE_DIR not in sys.path:
+        sys.path.insert(0, BASE_DIR)
+
+    try:
+        from brain import Brain
+        brain = Brain(model=model, provider=provider)
+    except Exception as exc:
+        log("err", f"Could not initialize AI Brain: {exc}")
+        return 0
+
+    if not brain.enabled:
+        log("warn", "AI Brain is unavailable. Check Ollama and the configured model.")
+        return 0
+
+    # Analyze recon and scan artifacts independently. Analysis does not establish
+    # that a vulnerability is confirmed.
+    if os.path.isdir(recon_dir):
+        try:
+            log("info", f"AI analyzing reconnaissance for {host}...")
+            brain.analyze_recon(recon_dir)
+        except Exception as exc:
+            log("warn", f"Recon AI analysis failed: {exc}")
+
+    try:
+        log("info", f"AI interpreting scan results for {host}...")
+        brain.interpret_scan(findings_dir)
+    except Exception as exc:
+        log("warn", f"Scan AI analysis failed: {exc}")
+
+    try:
+        log("info", f"Generating reports from validated evidence for {host}...")
+        output = brain.write_report(findings_dir, recon_dir)
+    except Exception as exc:
+        log("err", f"AI report generation failed: {exc}")
+        return 0
+
+    if output and "## REPORT " in output:
+        count = output.count("## REPORT ")
+        log("ok", f"AI generated {count} report(s) for {host}.")
+        return count
+
+    log("warn", "No submission-ready report generated. Check validation results and 04_h1_reports.md.")
     return 0
 
 
